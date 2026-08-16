@@ -4,29 +4,42 @@ Greenhouse Job Collector
 Collects and normalizes jobs from a Greenhouse-style API.
 """
 
-from datetime import datetime
-
 from app.collectors.base import BaseCollector
 from app.models.job import Job
+from app.services.http_client import HTTPClient
+from app.services.text_cleaner import clean_html
+from app.services.date_parser import parse_greenhouse_date
+from app.services.job_parser import extract_section
+from app.services.skill_extractor import extract_skills
 
 
 class GreenhouseCollector(BaseCollector):
     """Collect jobs from a Greenhouse job board."""
 
-    def __init__(self, company: str, board_token: str):
+    def __init__(
+        self,
+        company: str,
+        board_token: str,
+        http_client: HTTPClient,
+    ):
         self.company = company
         self.board_token = board_token
+        self.http_client = http_client
 
-    def collect(self, raw_jobs: list[dict] | None = None) -> list[Job]:
+    def collect(self) -> list[Job]:
         """
-        Convert raw Greenhouse job data into Job objects.
-
-        raw_jobs is temporarily injected for testing.
-        Later the collector will fetch this data from the API.
+        Fetch jobs from Greenhouse and convert them
+        into Job objects.
         """
 
-        if raw_jobs is None:
-            return []
+        url = (
+            "https://boards-api.greenhouse.io/v1/boards/"
+            f"{self.board_token}/jobs?content=true"
+        )
+
+        response = self.http_client.get(url)
+
+        raw_jobs = response.get("jobs", [])
 
         return [
             self._parse_job(raw_job)
@@ -34,43 +47,90 @@ class GreenhouseCollector(BaseCollector):
         ]
 
     def _parse_job(self, raw_job: dict) -> Job:
-        """Convert one raw job dictionary into our Job model."""
+        """Convert one Greenhouse job into our Job model."""
+
+        # ----------------------------------------
+        # Location
+        # ----------------------------------------
+
+        location = raw_job.get("location", "")
+
+        if isinstance(location, dict):
+            location = location.get("name", "")
+
+        # ----------------------------------------
+        # Description
+        # ----------------------------------------
+
+        description = clean_html(
+            raw_job.get("content", "")
+        )
+
+        # ----------------------------------------
+        # Job sections
+        # ----------------------------------------
+
+        basic_qualifications = extract_section(
+            description,
+            "BASIC QUALIFICATIONS",
+            [
+                "PREFERRED SKILLS",
+                "ADDITIONAL REQUIREMENTS",
+                "COMPENSATION AND BENEFITS",
+                "ITAR REQUIREMENTS",
+            ],
+        )
+
+        preferred_skills_text = extract_section(
+            description,
+            "PREFERRED SKILLS",
+            [
+                "ADDITIONAL REQUIREMENTS",
+                "COMPENSATION AND BENEFITS",
+                "ITAR REQUIREMENTS",
+            ],
+        )
+
+        # ----------------------------------------
+        # Skills
+        # ----------------------------------------
+
+        required_skills = extract_skills(
+            basic_qualifications
+        )
+
+        preferred_skills = extract_skills(
+            preferred_skills_text
+        )
+
+        # ----------------------------------------
+        # Job object
+        # ----------------------------------------
 
         return Job(
             id=str(raw_job["id"]),
-            title=raw_job["title"],
-            company=self.company,
-            location=raw_job.get("location", ""),
-            remote_type=raw_job.get("remote_type", ""),
-            experience_required=raw_job.get(
-                "experience_required",
-                "",
+            title=raw_job.get("title", ""),
+            company=raw_job.get(
+                "company_name",
+                self.company,
             ),
-            required_skills=raw_job.get(
-                "required_skills",
-                [],
-            ),
-            preferred_skills=raw_job.get(
-                "preferred_skills",
-                [],
-            ),
-            salary_min_lpa=raw_job.get(
-                "salary_min_lpa",
-            ),
-            salary_max_lpa=raw_job.get(
-                "salary_max_lpa",
-            ),
-            description=raw_job.get(
-                "description",
-                "",
-            ),
+            location=location,
+            description=description,
+            required_skills=required_skills,
+            preferred_skills=preferred_skills,
             application_url=raw_job.get(
-                "application_url",
+                "absolute_url",
                 "",
             ),
             source_url=raw_job.get(
-                "source_url",
+                "absolute_url",
                 "",
             ),
             source="greenhouse",
+            posted_at=parse_greenhouse_date(
+                raw_job.get(
+                    "first_published",
+                    "",
+                )
+            ),
         )
