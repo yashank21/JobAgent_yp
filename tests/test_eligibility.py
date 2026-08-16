@@ -4,8 +4,12 @@ from app.models.job import Job
 from app.services.eligibility import (
     has_work_authorization_restriction,
     is_experience_eligible,
-    is_job_eligible,
     is_location_eligible,
+)
+
+from app.eligibility.eligibility import (
+    check_eligibility,
+    is_job_eligible,
 )
 
 
@@ -15,6 +19,12 @@ def make_candidate(**kwargs):
         "email": "test@example.com",
         "location": "India",
         "experience_years": 0.92,
+        "preferred_roles": [
+            "Software Engineer",
+        ],
+        "preferred_locations": [
+            "India",
+        ],
     }
 
     defaults.update(kwargs)
@@ -33,6 +43,11 @@ def make_job(**kwargs):
     defaults.update(kwargs)
 
     return Job(**defaults)
+
+
+# ============================================================
+# LOCATION
+# ============================================================
 
 
 def test_matching_location_is_eligible():
@@ -99,15 +114,20 @@ def test_no_location_preference_allows_job():
     )
 
 
+# ============================================================
+# EXPERIENCE
+# ============================================================
+
+
 def test_sufficient_experience_is_eligible():
 
     candidate = make_candidate(
         experience_years=2,
     )
 
-    job = make_job()
-
-    job.experience_years_required = 2
+    job = make_job(
+        experience_years_required=2,
+    )
 
     assert is_experience_eligible(
         candidate,
@@ -121,9 +141,9 @@ def test_insufficient_experience_is_not_eligible():
         experience_years=0.92,
     )
 
-    job = make_job()
-
-    job.experience_years_required = 2
+    job = make_job(
+        experience_years_required=2,
+    )
 
     assert not is_experience_eligible(
         candidate,
@@ -143,6 +163,11 @@ def test_missing_experience_requirement_is_eligible():
         candidate,
         job,
     )
+
+
+# ============================================================
+# WORK AUTHORIZATION
+# ============================================================
 
 
 def test_itar_restriction_detected():
@@ -187,6 +212,11 @@ def test_normal_job_has_no_detected_restriction():
     )
 
 
+# ============================================================
+# COMPLETE ELIGIBILITY
+# ============================================================
+
+
 def test_complete_eligible_job():
 
     candidate = make_candidate(
@@ -196,14 +226,16 @@ def test_complete_eligible_job():
 
     job = make_job(
         location="Bengaluru, India",
+        experience_years_required=2,
     )
 
-    job.experience_years_required = 2
-
-    assert is_job_eligible(
+    result = is_job_eligible(
         candidate,
         job,
     )
+
+    assert result.eligible is True
+    assert result.reasons == []
 
 
 def test_complete_ineligible_job():
@@ -215,47 +247,21 @@ def test_complete_ineligible_job():
 
     job = make_job(
         location="Hawthorne, CA",
+        experience_years_required=2,
     )
 
-    job.experience_years_required = 2
-
-    assert not is_job_eligible(
+    result = is_job_eligible(
         candidate,
         job,
     )
 
-from app.eligibility.eligibility import (
-    check_eligibility,
-)
-from app.models.candidate import CandidateProfile
-from app.models.job import Job
+    assert result.eligible is False
+    assert len(result.reasons) == 2
 
 
-def make_candidate(**kwargs):
-    defaults = {
-        "name": "Yashank",
-        "email": "test@example.com",
-        "location": "India",
-        "experience_years": 1.0,
-        "preferred_locations": ["India"],
-    }
-
-    defaults.update(kwargs)
-
-    return CandidateProfile(**defaults)
-
-
-def make_job(**kwargs):
-    defaults = {
-        "id": "1",
-        "title": "Software Engineer",
-        "company": "Example",
-        "location": "Bengaluru, India",
-    }
-
-    defaults.update(kwargs)
-
-    return Job(**defaults)
+# ============================================================
+# RESULT / REASONS
+# ============================================================
 
 
 def test_eligible_job_has_no_reasons():
@@ -334,20 +340,82 @@ def test_multiple_failures_return_multiple_reasons():
     assert len(result.reasons) == 2
 
 
-def test_remote_job_is_eligible():
+# ============================================================
+# ROLE FAMILY
+# ============================================================
 
-    candidate = make_candidate(
-        preferred_locations=["India"],
-    )
 
-    job = make_job(
-        location="Remote",
-    )
+def test_software_engineer_role_is_eligible():
 
-    result = check_eligibility(
-        candidate,
-        job,
+    result = is_job_eligible(
+        make_candidate(),
+        make_job(
+            title="Software Engineer",
+        ),
     )
 
     assert result.eligible is True
     assert result.reasons == []
+
+
+def test_software_development_engineer_role_is_eligible():
+
+    result = is_job_eligible(
+        make_candidate(),
+        make_job(
+            title="Software Development Engineer",
+        ),
+    )
+
+    assert result.eligible is True
+    assert result.reasons == []
+
+
+def test_new_grad_software_role_is_eligible():
+
+    result = is_job_eligible(
+        make_candidate(),
+        make_job(
+            title=(
+                "New Graduate Engineer, "
+                "Software - '26/'27 (Starlink)"
+            ),
+        ),
+    )
+
+    assert result.eligible is True
+    assert result.reasons == []
+
+
+def test_unrelated_role_is_not_eligible():
+
+    result = is_job_eligible(
+        make_candidate(),
+        make_job(
+            title="Food Services Specialist - Restaurants",
+        ),
+    )
+
+    assert result.eligible is False
+    assert any(
+        "does not match preferred roles"
+        in reason
+        for reason in result.reasons
+    )
+
+
+def test_production_scheduler_is_not_eligible():
+
+    result = is_job_eligible(
+        make_candidate(),
+        make_job(
+            title="Production Control Scheduler (Falcon)",
+        ),
+    )
+
+    assert result.eligible is False
+    assert any(
+        "does not match preferred roles"
+        in reason
+        for reason in result.reasons
+    )

@@ -63,3 +63,69 @@ def test_rank_jobs_limit():
     )
 
     assert len(ranked) == 5
+    
+def test_ineligible_jobs_are_not_ranked():
+
+    candidate = CandidateProfile(
+        name="Yashank",
+        email="test@example.com",
+        location="India",
+        preferred_roles=["Software Engineer"],
+        preferred_locations=["India"],
+        skills=["Python"],
+    )
+
+    eligible_job = Job(
+        id="1",
+        title="Software Engineer",
+        company="Eligible Corp",
+        location="Bengaluru, India",
+        required_skills=["Python"],
+    )
+
+    ineligible_job = Job(
+        id="2",
+        title="Food Services Specialist",
+        company="Ineligible Corp",
+        location="Hawthorne, CA",
+        required_skills=["Python"],
+    )
+
+    ranked = rank_jobs(
+        candidate,
+        [ineligible_job, eligible_job],
+    )
+
+    companies = [
+        job.company
+        for job, score in ranked
+    ]
+
+    assert "Eligible Corp" in companies
+    assert "Ineligible Corp" not in companies
+    
+def test_role_mismatch_is_not_ranked():
+
+    candidate = CandidateProfile(
+        name="Yashank",
+        email="test@example.com",
+        location="India",
+        preferred_roles=["Software Engineer"],
+        preferred_locations=["India"],
+        skills=["Python"],
+    )
+
+    wrong_role = Job(
+        id="1",
+        title="Production Control Scheduler",
+        company="Wrong Role Corp",
+        location="Bengaluru, India",
+        required_skills=["Python"],
+    )
+
+    ranked = rank_jobs(
+        candidate,
+        [wrong_role],
+    )
+
+    assert ranked == []

@@ -33,22 +33,26 @@ ROLE_PATTERNS = {
     ],
 
     RoleFamily.BACKEND_ENGINEERING: [
-        r"\bbackend\b",
-        r"\bback-end\b",
-        r"\bserver-side\b",
+        r"\bbackend engineer\b",
+        r"\bbackend developer\b",
+        r"\bback end engineer\b",
+        r"\bback-end engineer\b",
+        r"\bserver[- ]side engineer\b",
     ],
 
     RoleFamily.FRONTEND_ENGINEERING: [
-        r"\bfrontend\b",
-        r"\bfront-end\b",
+        r"\bfrontend engineer\b",
+        r"\bfrontend developer\b",
+        r"\bfront end engineer\b",
+        r"\bfront-end engineer\b",
         r"\bui engineer\b",
         r"\bweb engineer\b",
     ],
 
     RoleFamily.DEVOPS: [
-        r"\bdevops\b",
-        r"\bdev ops\b",
-        r"\bsite reliability\b",
+        r"\bdevops engineer\b",
+        r"\bdev ops engineer\b",
+        r"\bsite reliability engineer\b",
         r"\bsre\b",
         r"\bplatform engineer\b",
         r"\binfrastructure engineer\b",
@@ -58,12 +62,12 @@ ROLE_PATTERNS = {
         r"\bsoftware engineer\b",
         r"\bsoftware engineering\b",
         r"\bsoftware developer\b",
+        r"\bsoftware development engineer\b",
         r"\bsoftware development\b",
-        r"\bsoftware\b",
         r"\bsde\b",
-        r"\bdevelopment engineer\b",
-        r"\bnew graduate engineer\b",
+        r"\bnew graduate engineer.*software\b",
     ],
+
 }
 
 

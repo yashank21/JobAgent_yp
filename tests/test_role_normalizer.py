@@ -89,3 +89,38 @@ def test_unknown_role():
 
 def test_empty_title():
     assert classify_role("") == RoleFamily.UNKNOWN
+    
+def test_supplier_development_engineer_is_not_software_engineering():
+    assert classify_role(
+        "Supplier Development Engineer (Mechanical Engineering)"
+    ) == RoleFamily.UNKNOWN
+
+
+def test_production_control_scheduler_is_unknown():
+    assert classify_role(
+        "Production Control Scheduler (Falcon)"
+    ) == RoleFamily.UNKNOWN
+
+
+def test_environmental_health_safety_engineer_is_unknown():
+    assert classify_role(
+        "Environmental Health & Safety Engineer (Satellites)"
+    ) == RoleFamily.UNKNOWN
+
+
+def test_software_engineer_is_software_engineering():
+    assert classify_role(
+        "Software Engineer"
+    ) == RoleFamily.SOFTWARE_ENGINEERING
+
+
+def test_software_development_engineer_is_software_engineering():
+    assert classify_role(
+        "Software Development Engineer"
+    ) == RoleFamily.SOFTWARE_ENGINEERING
+
+
+def test_new_grad_software_engineer_is_software_engineering():
+    assert classify_role(
+        "New Graduate Engineer, Software - '26/'27 (Starlink)"
+    ) == RoleFamily.SOFTWARE_ENGINEERING

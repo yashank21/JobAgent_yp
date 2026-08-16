@@ -12,17 +12,6 @@ from app.scoring.role_normalizer import (
 )
 
 
-ROLE_TO_FAMILY = {
-    "software engineer": RoleFamily.SOFTWARE_ENGINEERING,
-    "machine learning engineer": RoleFamily.MACHINE_LEARNING,
-    "ml engineer": RoleFamily.MACHINE_LEARNING,
-    "data engineer": RoleFamily.DATA_ENGINEERING,
-    "backend engineer": RoleFamily.BACKEND_ENGINEERING,
-    "frontend engineer": RoleFamily.FRONTEND_ENGINEERING,
-    "devops engineer": RoleFamily.DEVOPS,
-}
-
-
 def calculate_role_score(
     candidate: CandidateProfile,
     job: Job,
@@ -32,6 +21,10 @@ def calculate_role_score(
     preferred roles.
 
     Returns a score from 0.0 to 100.0.
+
+    Role classification is delegated entirely to
+    role_normalizer.py so that eligibility, scoring,
+    and explanations all use the same role taxonomy.
     """
 
     if not candidate.preferred_roles:
@@ -42,12 +35,16 @@ def calculate_role_score(
     if job_family == RoleFamily.UNKNOWN:
         return 0.0
 
-    for role in candidate.preferred_roles:
-        role_key = role.lower().strip()
+    for preferred_role in candidate.preferred_roles:
 
-        candidate_family = ROLE_TO_FAMILY.get(role_key)
+        preferred_family = classify_role(
+            preferred_role
+        )
 
-        if candidate_family == job_family:
+        if (
+            preferred_family != RoleFamily.UNKNOWN
+            and preferred_family == job_family
+        ):
             return 100.0
 
     return 0.0

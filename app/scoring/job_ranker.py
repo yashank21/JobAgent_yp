@@ -1,9 +1,11 @@
 """
 Job ranking utilities.
 
-Ranks jobs for a candidate using their overall match score.
+Ranks only eligible jobs for a candidate using their
+overall match score.
 """
 
+from app.eligibility.eligibility import check_eligibility
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.scoring.job_scorer import calculate_job_score
@@ -15,8 +17,23 @@ def rank_jobs(
     limit: int | None = None,
 ) -> list[tuple[Job, float]]:
     """
-    Rank jobs from highest to lowest candidate match score.
+    Rank eligible jobs from highest to lowest candidate match score.
+
+    Eligibility is a hard gate:
+    an ineligible job must never be scored or ranked.
     """
+
+    eligible_jobs: list[Job] = []
+
+    for job in jobs:
+
+        eligibility = check_eligibility(
+            candidate,
+            job,
+        )
+
+        if eligibility.eligible:
+            eligible_jobs.append(job)
 
     scored_jobs = [
         (
@@ -26,7 +43,7 @@ def rank_jobs(
                 job,
             ),
         )
-        for job in jobs
+        for job in eligible_jobs
     ]
 
     scored_jobs.sort(
