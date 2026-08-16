@@ -6,6 +6,10 @@ Explains why a candidate matches or does not match a job.
 
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
+from app.scoring.role_normalizer import (
+    RoleFamily,
+    classify_role,
+)
 
 
 def _normalize(value: str) -> str:
@@ -57,16 +61,20 @@ def explain_role_match(
     candidate: CandidateProfile,
     job: Job,
 ) -> str:
-    """Explain role compatibility."""
+    """Explain role compatibility using role-family classification."""
 
     if not candidate.preferred_roles:
         return "✓ No preferred role restriction"
 
-    job_title = _normalize(job.title)
+    job_family = classify_role(job.title)
 
     for role in candidate.preferred_roles:
+        candidate_family = classify_role(role)
 
-        if _normalize(role) in job_title:
+        if (
+            candidate_family != RoleFamily.UNKNOWN
+            and candidate_family == job_family
+        ):
             return (
                 f"✓ Role matches preferred role: "
                 f"{role}"

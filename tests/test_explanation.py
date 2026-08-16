@@ -38,25 +38,51 @@ def make_candidate(**overrides):
     return CandidateProfile(**data)
 
 
-def make_job(**overrides):
-    data = {
-        "id": "1",
-        "title": "Software Engineer",
-        "company": "Example",
-        "location": "India",
-        "required_skills": [
-            "python",
-            "c++",
-        ],
-        "preferred_skills": [
-            "fastapi",
-            "react",
-        ],
-    }
-
-    data.update(overrides)
-
-    return Job(**data)
+def make_job(
+    title="Software Engineer",
+    company="Test Company",
+    location="India",
+    remote_type="",
+    experience_required="",
+    experience_years_required=None,
+    required_skills=None,
+    preferred_skills=None,
+    salary_min_lpa=None,
+    salary_max_lpa=None,
+    description="",
+    application_url="",
+    source_url="",
+    source="",
+    posted_at=None,
+    fetched_at=None,
+):
+    return Job(
+        id="test_job_1",
+        title=title,
+        company=company,
+        location=location,
+        remote_type=remote_type,
+        experience_required=experience_required,
+        experience_years_required=experience_years_required,
+        required_skills=(
+            required_skills
+            if required_skills is not None
+            else ["Python", "C++"]
+        ),
+        preferred_skills=(
+            preferred_skills
+            if preferred_skills is not None
+            else ["FastAPI"]
+        ),
+        salary_min_lpa=salary_min_lpa,
+        salary_max_lpa=salary_max_lpa,
+        description=description,
+        application_url=application_url,
+        source_url=source_url,
+        source=source,
+        posted_at=posted_at,
+        fetched_at=fetched_at,
+    )
 
 
 def test_required_skill_match():
@@ -66,8 +92,8 @@ def test_required_skill_match():
         make_job(),
     )
 
-    assert "✓ python — required" in result
-    assert "✓ c++ — required" in result
+    assert "✓ Python — required" in result
+    assert "✓ C++ — required" in result
 
 
 def test_missing_required_skill():
@@ -79,8 +105,8 @@ def test_missing_required_skill():
         make_job(),
     )
 
-    assert "✓ python — required" in result
-    assert "✗ c++ — required skill missing" in result
+    assert "✓ Python — required" in result
+    assert "✗ C++ — required skill missing" in result
 
 
 def test_preferred_skill_match():
@@ -90,7 +116,7 @@ def test_preferred_skill_match():
         make_job(),
     )
 
-    assert "✓ fastapi — preferred" in result
+    assert "✓ FastAPI — preferred" in result
 
 
 def test_role_match():
@@ -218,3 +244,41 @@ def test_complete_explanation():
     assert any("Location" in item for item in result)
     assert any("Experience" in item for item in result)
     assert any("Salary" in item for item in result)
+
+
+def test_role_explanation_matches_role_family():
+
+    candidate = make_candidate()
+
+    job = make_job(
+        title="New Graduate Engineer, Software - '26/'27 (Starlink)"
+    )
+
+    result = explain_role_match(
+        candidate,
+        job,
+    )
+
+    assert result == (
+        "✓ Role matches preferred role: "
+        "Software Engineer"
+    )
+
+
+def test_role_explanation_matches_software_development_engineer():
+
+    candidate = make_candidate()
+
+    job = make_job(
+        title="Software Development Engineer"
+    )
+
+    result = explain_role_match(
+        candidate,
+        job,
+    )
+
+    assert result == (
+        "✓ Role matches preferred role: "
+        "Software Engineer"
+    )
