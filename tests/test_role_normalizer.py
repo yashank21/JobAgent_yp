@@ -124,3 +124,162 @@ def test_new_grad_software_engineer_is_software_engineering():
     assert classify_role(
         "New Graduate Engineer, Software - '26/'27 (Starlink)"
     ) == RoleFamily.SOFTWARE_ENGINEERING
+    
+def test_ai_engineer():
+    assert classify_role(
+        "AI Engineer"
+    ) == RoleFamily.AI_ENGINEERING
+
+
+def test_applied_ai_engineer():
+    assert classify_role(
+        "Applied AI Engineer"
+    ) == RoleFamily.AI_ENGINEERING
+
+
+def test_llm_engineer():
+    assert classify_role(
+        "LLM Engineer"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_generative_ai_engineer():
+    assert classify_role(
+        "Generative AI Engineer"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_genai_engineer():
+    assert classify_role(
+        "GenAI Engineer"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_rag_engineer():
+    assert classify_role(
+        "RAG Engineer"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_machine_learning_engineer():
+    assert classify_role(
+        "Machine Learning Engineer"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_ai_ml_engineer():
+    assert classify_role(
+        "AI/ML Engineer"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_forward_deployed_engineer():
+    assert classify_role(
+        "Forward Deployed Engineer"
+    ) == RoleFamily.FORWARD_DEPLOYED
+
+
+def test_data_scientist():
+    assert classify_role(
+        "Data Scientist"
+    ) == RoleFamily.DATA_SCIENCE
+
+
+def test_applied_scientist():
+    assert classify_role(
+        "Applied Scientist"
+    ) == RoleFamily.DATA_SCIENCE
+
+
+def test_data_platform_engineer():
+    assert classify_role(
+        "Data Platform Engineer"
+    ) == RoleFamily.DATA_ENGINEERING
+
+
+def test_ml_platform_engineer():
+    assert classify_role(
+        "ML Platform Engineer"
+    ) == RoleFamily.DEVOPS_ML_PLATFORM
+
+def test_software_engineer_ai_ml_is_not_generic_software():
+    assert classify_role(
+        "Software Engineer, AI/ML"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_software_engineer_generative_ai_is_not_generic_software():
+    assert classify_role(
+        "Software Engineer, Generative AI"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_backend_software_engineer_is_backend():
+    assert classify_role(
+        "Backend Software Engineer"
+    ) == RoleFamily.BACKEND_ENGINEERING
+    
+def test_sde():
+    assert classify_role(
+        "SDE"
+    ) == RoleFamily.SOFTWARE_ENGINEERING
+
+
+def test_software_engineer_with_backend():
+    assert classify_role(
+        "Software Engineer - Backend"
+    ) == RoleFamily.SOFTWARE_ENGINEERING
+
+
+def test_software_engineer_with_ai():
+    assert classify_role(
+        "Software Engineer, AI"
+    ) == RoleFamily.AI_ENGINEERING
+
+
+def test_software_engineer_with_ml():
+    assert classify_role(
+        "Software Engineer, Machine Learning"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_software_engineer_with_llm():
+    assert classify_role(
+        "Software Engineer - LLM"
+    ) == RoleFamily.LLM_GENAI
+
+
+def test_applied_machine_learning_engineer():
+    assert classify_role(
+        "Applied Machine Learning Engineer"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_deep_learning_engineer():
+    assert classify_role(
+        "Deep Learning Engineer"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_mle():
+    assert classify_role(
+        "MLE"
+    ) == RoleFamily.MACHINE_LEARNING
+
+
+def test_ai_software_engineer():
+    assert classify_role(
+        "AI Software Engineer"
+    ) == RoleFamily.AI_ENGINEERING
+
+
+def test_machine_learning_scientist():
+    assert classify_role(
+        "Machine Learning Scientist"
+    ) == RoleFamily.DATA_SCIENCE
+
+
+def test_research_engineer_is_not_unknown():
+    assert classify_role(
+        "Research Engineer"
+    ) == RoleFamily.UNKNOWN

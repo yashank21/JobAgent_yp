@@ -15,41 +15,27 @@ def rank_jobs(
     candidate: CandidateProfile,
     jobs: list[Job],
     limit: int | None = None,
-) -> list[tuple[Job, float]]:
+) -> list[tuple[Job, float, list[str]]]:
     """
     Rank eligible jobs from highest to lowest candidate match score.
 
     Eligibility is a hard gate:
     an ineligible job must never be scored or ranked.
     """
-
-    eligible_jobs: list[Job] = []
+    scored_jobs = []
 
     for job in jobs:
+        # 1. Hard Gate: Eligibility Check
+        eligibility = check_eligibility(candidate, job)
+        if not eligibility.eligible:
+            continue  # REJECT IMMEDIATELY — do not score
 
-        eligibility = check_eligibility(
-            candidate,
-            job,
-        )
+        # 2. Score only eligible jobs
+        score = calculate_job_score(candidate, job)
+        scored_jobs.append((job, score, eligibility.reasons))
 
-        if eligibility.eligible:
-            eligible_jobs.append(job)
-
-    scored_jobs = [
-        (
-            job,
-            calculate_job_score(
-                candidate,
-                job,
-            ),
-        )
-        for job in eligible_jobs
-    ]
-
-    scored_jobs.sort(
-        key=lambda item: item[1],
-        reverse=True,
-    )
+    # Sort descending by match score
+    scored_jobs.sort(key=lambda item: item[1], reverse=True)
 
     if limit is not None:
         return scored_jobs[:limit]

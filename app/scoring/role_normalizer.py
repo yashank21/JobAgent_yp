@@ -3,34 +3,177 @@ from enum import Enum
 
 
 class RoleFamily(str, Enum):
-    SOFTWARE_ENGINEERING = "software_engineering"
+    AI_ENGINEERING = "ai_engineering"
     MACHINE_LEARNING = "machine_learning"
+    LLM_GENAI = "llm_genai"
+    FORWARD_DEPLOYED = "forward_deployed"
+
+    DATA_SCIENCE = "data_science"
     DATA_ENGINEERING = "data_engineering"
+
+    DEVOPS_ML_PLATFORM = "devops_ml_platform"
+    DEVOPS = "devops"
+
+    SOFTWARE_ENGINEERING = "software_engineering"
     BACKEND_ENGINEERING = "backend_engineering"
     FRONTEND_ENGINEERING = "frontend_engineering"
-    DEVOPS = "devops"
+
     UNKNOWN = "unknown"
 
 
-# More specific patterns must come before generic ones.
+# ------------------------------------------------------------
+# ROLE PATTERNS
+# ------------------------------------------------------------
+#
+# IMPORTANT:
+# More specific AI/ML families must come BEFORE generic
+# software/backend/platform patterns.
+#
+# Example:
+#
+# "Software Engineer, Generative AI"
+#       -> LLM_GENAI
+#
+# NOT:
+#
+#       -> SOFTWARE_ENGINEERING
+#
+# ------------------------------------------------------------
+
 ROLE_PATTERNS = {
+
+    # ========================================================
+    # LLM / GENERATIVE AI
+    # ========================================================
+
+    RoleFamily.LLM_GENAI: [
+        r"\bllm engineer\b",
+        r"\bllm engineering\b",
+        r"\blarge language model engineer\b",
+        r"\bgenerative ai engineer\b",
+        r"\bgenerative ai engineering\b",
+        r"\bgenai engineer\b",
+        r"\bgen ai engineer\b",
+        r"\brag engineer\b",
+        r"\bretrieval augmented generation engineer\b",
+        r"\bretrieval augmented generation\b",
+        r"\bprompt engineer\b",
+
+        # Software Engineer + GenAI
+        r"\bsoftware engineer.*generative ai\b",
+        r"\bsoftware engineer.*genai\b",
+        r"\bsoftware engineer.*gen ai\b",
+        r"\bsoftware engineer.*llm\b",
+    ],
+
+    # ========================================================
+    # DATA SCIENCE
+    # ========================================================
+
+    RoleFamily.DATA_SCIENCE: [
+        r"\bmachine learning scientist\b",
+        r"\bml scientist\b",
+        r"\bdata scientist\b",
+        r"\bdata science\b",
+        r"\bapplied scientist\b",
+        r"\bdata science engineer\b",
+    ],
+
+    # ========================================================
+    # MACHINE LEARNING
+    # ========================================================
+
     RoleFamily.MACHINE_LEARNING: [
-        r"\bmachine learning\b",
+        r"\bmachine learning engineer\b",
+        r"\bmachine learning engineering\b",
         r"\bml engineer\b",
         r"\bml engineering\b",
-        r"\bai/ml\b",
-        r"\bai engineer\b",
-        r"\bapplied ml\b",
+        r"\bmle\b",
+        r"\bai/ml engineer\b",
+        r"\bai ml engineer\b",
+        r"\bapplied ml engineer\b",
+        r"\bapplied machine learning engineer\b",
+        r"\bdeep learning engineer\b",
+
+        # Software Engineer + ML
+        r"\bsoftware engineer.*machine learning\b",
+        r"\bsoftware engineer.*ml\b",
+        r"\bsoftware engineer.*ai/ml\b",
+        r"\bsoftware engineer.*ai ml\b",
+
+        r"\bmachine learning\b",
         r"\bdeep learning\b",
     ],
+
+    # ========================================================
+    # AI ENGINEERING
+    # ========================================================
+
+    RoleFamily.AI_ENGINEERING: [
+        r"\bai engineer\b",
+        r"\bai engineering\b",
+        r"\bartificial intelligence engineer\b",
+        r"\bartificial intelligence engineering\b",
+        r"\bapplied ai engineer\b",
+        r"\bapplied artificial intelligence engineer\b",
+        r"\bai applications engineer\b",
+        r"\bai application engineer\b",
+        r"\bai software engineer\b",
+
+        # Software Engineer + AI
+        r"\bsoftware engineer.*artificial intelligence\b",
+        r"\bsoftware engineer.*\bai\b",
+    ],
+
+    # ========================================================
+    # FORWARD DEPLOYED
+    # ========================================================
+
+    RoleFamily.FORWARD_DEPLOYED: [
+        r"\bforward deployed engineer\b",
+        r"\bforward-deployed engineer\b",
+        r"\bforward deployed software engineer\b",
+        r"\bforward-deployed software engineer\b",
+        r"\bforward deployed ai engineer\b",
+        r"\bforward-deployed ai engineer\b",
+        r"\bforward deployed ml engineer\b",
+        r"\bforward-deployed ml engineer\b",
+    ],
+
+    # ========================================================
+    # DATA ENGINEERING
+    # ========================================================
 
     RoleFamily.DATA_ENGINEERING: [
         r"\bdata engineer\b",
         r"\bdata engineering\b",
+        r"\bbig data engineer\b",
         r"\bbig data\b",
+        r"\bdata platform engineer\b",
         r"\bdata platform\b",
         r"\banalytics engineer\b",
+        r"\banalytics engineering\b",
     ],
+
+    # ========================================================
+    # ML / AI PLATFORM
+    # ========================================================
+
+    RoleFamily.DEVOPS_ML_PLATFORM: [
+        r"\bml platform engineer\b",
+        r"\bmachine learning platform engineer\b",
+        r"\bml infrastructure engineer\b",
+        r"\bmachine learning infrastructure engineer\b",
+        r"\bai platform engineer\b",
+        r"\bai infrastructure engineer\b",
+        r"\bmlops engineer\b",
+        r"\bml ops engineer\b",
+        r"\bmachine learning operations engineer\b",
+    ],
+
+    # ========================================================
+    # BACKEND
+    # ========================================================
 
     RoleFamily.BACKEND_ENGINEERING: [
         r"\bbackend engineer\b",
@@ -38,7 +181,16 @@ ROLE_PATTERNS = {
         r"\bback end engineer\b",
         r"\bback-end engineer\b",
         r"\bserver[- ]side engineer\b",
+
+        # Backend + Software Engineer
+        r"\bbackend software engineer\b",
+        r"\bback end software engineer\b",
+        r"\bback-end software engineer\b",
     ],
+
+    # ========================================================
+    # FRONTEND
+    # ========================================================
 
     RoleFamily.FRONTEND_ENGINEERING: [
         r"\bfrontend engineer\b",
@@ -47,7 +199,16 @@ ROLE_PATTERNS = {
         r"\bfront-end engineer\b",
         r"\bui engineer\b",
         r"\bweb engineer\b",
+
+        # Frontend + Software Engineer
+        r"\bfrontend software engineer\b",
+        r"\bfront end software engineer\b",
+        r"\bfront-end software engineer\b",
     ],
+
+    # ========================================================
+    # DEVOPS
+    # ========================================================
 
     RoleFamily.DEVOPS: [
         r"\bdevops engineer\b",
@@ -58,6 +219,10 @@ ROLE_PATTERNS = {
         r"\binfrastructure engineer\b",
     ],
 
+    # ========================================================
+    # GENERIC SOFTWARE ENGINEERING
+    # ========================================================
+
     RoleFamily.SOFTWARE_ENGINEERING: [
         r"\bsoftware engineer\b",
         r"\bsoftware engineering\b",
@@ -67,7 +232,6 @@ ROLE_PATTERNS = {
         r"\bsde\b",
         r"\bnew graduate engineer.*software\b",
     ],
-
 }
 
 
@@ -81,7 +245,8 @@ def normalize_role_title(title: str) -> str:
 
     title = title.lower().strip()
 
-    # Remove academic/graduation year ranges BEFORE
+    # --------------------------------------------------------
+    # Remove academic / graduation year ranges BEFORE
     # replacing separators.
     #
     # Handles:
@@ -90,6 +255,8 @@ def normalize_role_title(title: str) -> str:
     # 26/'27
     # 26/27
     # 2026/2027
+    # --------------------------------------------------------
+
     title = re.sub(
         r"'?\d{2,4}\s*/\s*'?\d{2,4}",
         " ",
@@ -97,6 +264,7 @@ def normalize_role_title(title: str) -> str:
     )
 
     # Remove standalone graduation years.
+
     title = re.sub(
         r"\b(?:19|20)\d{2}\b",
         " ",
@@ -104,10 +272,20 @@ def normalize_role_title(title: str) -> str:
     )
 
     # Normalize separators.
-    title = re.sub(r"[-_/]", " ", title)
+
+    title = re.sub(
+        r"[-_/]",
+        " ",
+        title,
+    )
 
     # Remove excessive whitespace.
-    title = re.sub(r"\s+", " ", title)
+
+    title = re.sub(
+        r"\s+",
+        " ",
+        title,
+    )
 
     return title.strip()
 
@@ -115,6 +293,10 @@ def normalize_role_title(title: str) -> str:
 def classify_role(title: str) -> RoleFamily:
     """
     Classify a job title into its most likely role family.
+
+    Pattern order is intentional:
+    specialized AI/ML roles are evaluated before generic
+    software/backend/platform roles.
     """
 
     normalized = normalize_role_title(title)

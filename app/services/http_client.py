@@ -22,9 +22,18 @@ class HTTPClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
-    def get(self, url: str) -> dict:
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+    ):
         """
-        Perform a GET request and return JSON data.
+        Perform a GET request.
+
+        Returns JSON when the response contains valid JSON.
+        Otherwise returns the response body as text.
 
         Retries temporary failures such as:
         - timeouts
@@ -41,23 +50,33 @@ class HTTPClient:
 
                 response = requests.get(
                     url,
+                    headers=headers,
+                    params=params,
                     timeout=self.timeout,
                 )
 
                 if response.status_code == 429:
+
                     last_error = requests.HTTPError(
                         "Rate limited (HTTP 429)"
                     )
 
                 elif response.status_code >= 500:
+
                     last_error = requests.HTTPError(
-                        f"Server error (HTTP {response.status_code})"
+                        f"Server error "
+                        f"(HTTP {response.status_code})"
                     )
 
                 else:
+
                     response.raise_for_status()
 
-                    return response.json()
+                    try:
+                        return response.json()
+
+                    except ValueError:
+                        return response.text
 
             except (
                 requests.Timeout,
@@ -71,3 +90,14 @@ class HTTPClient:
                 time.sleep(self.retry_delay)
 
         raise last_error
+    
+        def get_text(self, url: str, **kwargs) -> str:
+            """Fetch raw text/HTML content from a URL."""
+            response = self.get(url, **kwargs)
+            return response.text if hasattr(response, "text") else str(response)
+        
+        def get(self, url: str, **kwargs):
+            # Pass extra kwargs (like headers) to requests.get
+            response = requests.get(url, timeout=10, **kwargs)
+            response.raise_for_status()
+            return response
