@@ -18,6 +18,19 @@ class RoleFamily(str, Enum):
     BACKEND_ENGINEERING = "backend_engineering"
     FRONTEND_ENGINEERING = "frontend_engineering"
 
+    # NEW
+    RESEARCH_ENGINEERING = "research_engineering"
+    MOBILE_ENGINEERING = "mobile_engineering"
+
+    # NEW — intentionally not candidate-compatible
+    SUPPORT_ENGINEERING = "support_engineering"
+    CUSTOMER_ENGINEERING = "customer_engineering"
+    INTEGRATION_ENGINEERING = "integration_engineering"
+    RPA_ENGINEERING = "rpa_engineering"
+
+    MANAGEMENT = "management"
+    PRODUCT = "product"
+
     UNKNOWN = "unknown"
 
 
@@ -232,6 +245,48 @@ ROLE_PATTERNS = {
         r"\bsde\b",
         r"\bnew graduate engineer.*software\b",
     ],
+    
+    RoleFamily.SUPPORT_ENGINEERING: [
+    r"\bsupport engineer\b",
+    r"\btechnical support engineer\b",
+    r"\bproduction support engineer\b",
+    ],
+    
+    RoleFamily.CUSTOMER_ENGINEERING: [
+    r"\bcustomer engineer\b",
+    r"\bcustomer success engineer\b",
+    r"\bsolutions engineer\b",
+    r"\bfield engineer\b",
+    ],
+    
+    RoleFamily.INTEGRATION_ENGINEERING: [
+    r"\bintegration engineer\b",
+    r"\bintegration developer\b",
+    ],
+    
+    RoleFamily.INTEGRATION_ENGINEERING: [
+    r"\bintegration engineer\b",
+    r"\bintegration developer\b",
+    ],
+    
+    RoleFamily.RPA_ENGINEERING: [
+    r"\brpa engineer\b",
+    r"\brpa developer\b",
+    r"\brobotic process automation\b",
+    ],
+    
+    RoleFamily.MANAGEMENT: [
+    r"\bengineering manager\b",
+    r"\bsoftware engineering manager\b",
+    r"\bengineering director\b",
+    r"\bhead of engineering\b",
+    r"\bvp of engineering\b",
+    ],
+    
+    RoleFamily.PRODUCT: [
+    r"\bproduct manager\b",
+    r"\bproduct management\b",
+    ]
 }
 
 

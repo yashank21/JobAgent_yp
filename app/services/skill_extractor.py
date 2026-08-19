@@ -8,38 +8,100 @@ import re
 
 
 TECH_SKILLS = {
+    # ----------------------------------------
     # Programming languages
+    # ----------------------------------------
+
     "python",
     "c++",
+    "c#",
     "java",
     "javascript",
     "typescript",
     "go",
+    "golang",
     "rust",
+    "ruby",
+    "php",
+    "swift",
+    "kotlin",
+    "scala",
 
-    # Databases / query
+    # ----------------------------------------
+    # Databases / storage / query
+    # ----------------------------------------
+
     "sql",
     "postgresql",
     "mysql",
     "sql server",
     "mongodb",
+    "redis",
+    "elasticsearch",
+    "dynamodb",
+    "cassandra",
+    "sqlite",
+    "oracle",
 
+    # ----------------------------------------
     # AI / ML
+    # ----------------------------------------
+
+    "ai",
+    "ml",
     "machine learning",
     "deep learning",
     "artificial intelligence",
+    "natural language processing",
+    "nlp",
+    "computer vision",
+    "generative ai",
+    "llm",
+    "llms",
     "pytorch",
     "tensorflow",
+    "scikit-learn",
+    "sklearn",
+    "hugging face",
+    "transformers",
+    "langchain",
+    "langgraph",
 
-    # Backend / web
-    "fastapi",
-    "flask",
-    "django",
-    "sqlalchemy",
-    "react",
-    "three.js",
+    # ----------------------------------------
+# Backend / Web
+# ----------------------------------------
 
-    # Infrastructure / systems
+"fastapi",
+"flask",
+"django",
+"sqlalchemy",
+"react",
+"three.js",
+"next.js",
+"nextjs",
+"node.js",
+"nodejs",
+"express",
+"graphql",
+"rest",
+"rest api",
+"api",
+"microservices",
+
+    # ----------------------------------------
+    # Distributed systems / messaging
+    # ----------------------------------------
+
+    "kafka",
+    "rabbitmq",
+    "grpc",
+    "redis",
+    "distributed systems",
+
+    # ----------------------------------------
+    # Cloud / infrastructure
+    # ----------------------------------------
+
     "linux",
     "docker",
     "kubernetes",
@@ -47,8 +109,44 @@ TECH_SKILLS = {
     "azure",
     "gcp",
     "hpc",
+    "terraform",
+    "ansible",
 
+    # ----------------------------------------
+    # DevOps / CI/CD
+    # ----------------------------------------
+
+    "ci/cd",
+    "jenkins",
+    "github actions",
+    "gitlab ci",
+    "git",
+    "github",
+
+    # ----------------------------------------
+    # Frontend
+    # ----------------------------------------
+
+    "html",
+    "css",
+    "tailwind",
+    "tailwind css",
+
+    # ----------------------------------------
+    # Data / analytics
+    # ----------------------------------------
+
+    "pandas",
+    "numpy",
+    "spark",
+    "apache spark",
+    "airflow",
+    "databricks",
+
+    # ----------------------------------------
     # Simulation / engineering
+    # ----------------------------------------
+
     "openfoam",
     "ansys fluent",
     "comsol multiphysics",
@@ -87,9 +185,16 @@ def extract_skills(
         key=len,
         reverse=True,
     ):
-        pattern = rf"(?<!\w){re.escape(skill.lower())}(?!\w)"
+        pattern = (
+            rf"(?<!\w)"
+            rf"{re.escape(skill.lower())}"
+            rf"(?!\w)"
+        )
 
-        if re.search(pattern, text_lower):
+        if re.search(
+            pattern,
+            text_lower,
+        ):
             found.append(skill)
 
     return found

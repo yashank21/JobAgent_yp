@@ -23,7 +23,7 @@ def extract_section(
         Python...
         C++...
 
-    Returns only the BASIC QUALIFICATIONS content.
+    Returns only the requested section content.
     """
 
     if not text:
@@ -37,9 +37,10 @@ def extract_section(
     )
 
     pattern = (
-        rf"{section_pattern}\s*:"
+        rf"{section_pattern}\s*:?"
         rf"(.*?)(?="
-        rf"(?:{next_pattern})\s*:|$)"
+        rf"(?:{next_pattern})\s*:?"
+        rf"|$)"
     )
 
     match = re.search(

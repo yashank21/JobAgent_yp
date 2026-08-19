@@ -261,18 +261,11 @@ def print_ranked_jobs(
         )
         return
 
-    for index, item in enumerate(
+    for index, match in enumerate(
         ranked_jobs,
         start=1,
     ):
-        # Handle tuple (job, score) or MatchResult object
-        if isinstance(item, tuple):
-            job, score = item
-            match_obj = None
-        else:
-            job = item.job
-            score = item.score * 100 if item.score <= 1.0 else item.score
-            match_obj = item
+        job = match.job
 
         print()
         print(
@@ -288,7 +281,7 @@ def print_ranked_jobs(
         )
 
         print(
-            f"Match Score: {score}%"
+            f"Match Score: {match.final_score}%"
         )
 
         print(
@@ -296,7 +289,8 @@ def print_ranked_jobs(
         )
 
         print(
-            f"URL: {job.application_url or getattr(job, 'source_url', '')}"
+            f"URL: "
+            f"{job.application_url or getattr(job, 'source_url', '')}"
         )
 
         print(
@@ -309,16 +303,31 @@ def print_ranked_jobs(
             f"{job.preferred_skills}"
         )
 
-        # -----------------------------------------
-        # Match explanation
-        # -----------------------------------------
+        print()
+        print("SCORE BREAKDOWN:")
+
+        print(
+            f"  Skill:       {match.skill_score}%"
+        )
+
+        print(
+            f"  Role:        {match.role_score}%"
+        )
+
+        print(
+            f"  Experience:  {match.experience_score}%"
+        )
+
+        print(
+            f"  Location:    {match.location_score}%"
+        )
 
         print()
         print("WHY THIS JOB MATCHES:")
 
         explanations = explain_match(
             candidate,
-            match_obj if match_obj else job,
+            job,
         )
 
         for explanation in explanations:
@@ -417,16 +426,11 @@ def main():
         recent_jobs,
     )
 
-    # 2. Filter out ineligible jobs BEFORE ranking
-    eligible_jobs = [
-        job for job in recent_jobs 
-        if check_eligibility(candidate, job).eligible
-    ]
-
-    # 3. Pass ONLY eligible jobs to rank_jobs
+    # 2. Rank recent jobs.
+    # rank_jobs() performs hard eligibility filtering internally.
     ranked_jobs = rank_jobs(
         candidate,
-        eligible_jobs,
+        recent_jobs,
         limit=TOP_JOBS,
     )
 

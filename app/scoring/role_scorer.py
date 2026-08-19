@@ -108,7 +108,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.SOFTWARE_ENGINEERING: 55.0,
     },
 
-    RoleFamily.DATA_ENGINEERING: {
+        RoleFamily.DATA_ENGINEERING: {
         RoleFamily.DATA_ENGINEERING: 100.0,
         RoleFamily.DATA_SCIENCE: 85.0,
         RoleFamily.MACHINE_LEARNING: 75.0,
@@ -117,7 +117,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.LLM_GENAI: 65.0,
         RoleFamily.FORWARD_DEPLOYED: 60.0,
         RoleFamily.BACKEND_ENGINEERING: 60.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 50.0,
+        RoleFamily.SOFTWARE_ENGINEERING: 0.0,
     },
 
     RoleFamily.BACKEND_ENGINEERING: {

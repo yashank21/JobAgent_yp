@@ -9,6 +9,8 @@ from app.models.candidate import CandidateProfile
 
 CANDIDATE_PROFILE = CandidateProfile(
     name="Yashank Patidar",
+    email="yashank21@gmail.com",
+    location="India",
     
     # -----------------------------------------
     # Experience (11 months at Juniper Networks)
@@ -113,6 +115,6 @@ CANDIDATE_PROFILE = CandidateProfile(
     # -----------------------------------------
     # Compensation & Links
     # -----------------------------------------
-    min_salary=0,
+    minimum_salary_lpa=0.0,
     github_url="https://github.com/yashank21",
 )

@@ -38,6 +38,8 @@ class Job:
     # "2+ years of experience" -> 2.0
     # "1-3 years of experience" -> 1.0
     experience_years_required: float | None = None
+    
+    seniority: str = "unknown"
 
     required_skills: list[str] = field(default_factory=list)
     preferred_skills: list[str] = field(default_factory=list)

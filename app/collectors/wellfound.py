@@ -1,16 +1,26 @@
-import json
+"""
+Wellfound Job Collector.
+
+Collects and normalizes jobs from Wellfound
+into the common Job model.
+"""
+
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
 from playwright.async_api import async_playwright
 
 from app.models.job import Job
+from app.services.experience_parser import parse_experience_years
 
 logger = logging.getLogger(__name__)
 
 
 class WellfoundCollector:
+
+    BASE_URL = "https://wellfound.com"
 
     def __init__(
         self,
@@ -18,240 +28,530 @@ class WellfoundCollector:
         urls: Optional[List[str]] = None,
     ):
         self.http_client = http_client
+
         self.urls = urls or [
             "https://wellfound.com/role/l/ai-engineer/india",
         ]
 
-    def _extract_company_from_slug(self, url: str) -> str:
-        """Fallback to extract company or job slug cleanly from application URL."""
-        if not url:
-            return "Startup"
-        match = re.search(r"/jobs/\d+-(.+)$", url)
-        if match:
-            slug = match.group(1).replace("-", " ").title()
-            return slug
-        return "Startup"
+    # ---------------------------------------------------------
+    # Utility helpers
+    # ---------------------------------------------------------
 
-    def _parse_job(self, raw_job: Dict[str, Any]) -> Job:
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        if not text:
+            return ""
+
+        # Remove HTML tags
+        text = re.sub(r"<[^>]+>", " ", text)
+
+        # Normalize whitespace
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _absolute_url(self, url: str) -> str:
+        if not url:
+            return ""
+
+        if url.startswith("http"):
+            return url
+
+        return f"{self.BASE_URL}{url}"
+
+    def _extract_job_id(self, url: str) -> str:
+        match = re.search(r"/jobs/(\d+)", url)
+
+        if match:
+            return match.group(1)
+
+        return ""
+
+    # ---------------------------------------------------------
+    # Salary parsing
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _parse_salary(text: str):
+        """
+        Parse salary text into approximate LPA values.
+
+        Examples:
+            ₹15L – ₹20L
+            ₹20,000 – ₹50,000
+            $25k – $50k
+
+        Returns:
+            (minimum_lpa, maximum_lpa)
+        """
+
+        if not text:
+            return None, None
+
+        text = text.replace(",", "").strip()
+
+        # -----------------------------------------------------
+        # INR LPA
+        # -----------------------------------------------------
+
+        inr_lpa = re.search(
+            r"₹\s*(\d+(?:\.\d+)?)\s*L"
+            r"(?:\s*[–-]\s*₹?\s*(\d+(?:\.\d+)?)\s*L)?",
+            text,
+            re.IGNORECASE,
+        )
+
+        if inr_lpa:
+            minimum = float(inr_lpa.group(1))
+
+            maximum = (
+                float(inr_lpa.group(2))
+                if inr_lpa.group(2)
+                else minimum
+            )
+
+            return minimum, maximum
+
+        # -----------------------------------------------------
+        # INR monthly
+        # -----------------------------------------------------
+
+        inr_monthly = re.search(
+            r"₹\s*(\d+(?:\.\d+)?)\s*[kK]"
+            r"(?:\s*[–-]\s*₹?\s*(\d+(?:\.\d+)?)\s*[kK])?",
+            text,
+        )
+
+        if inr_monthly:
+            minimum_monthly = float(inr_monthly.group(1))
+
+            maximum_monthly = (
+                float(inr_monthly.group(2))
+                if inr_monthly.group(2)
+                else minimum_monthly
+            )
+
+            return (
+                minimum_monthly * 12 / 100,
+                maximum_monthly * 12 / 100,
+            )
+
+        # -----------------------------------------------------
+        # USD yearly
+        # -----------------------------------------------------
+
+        usd = re.search(
+            r"\$\s*(\d+(?:\.\d+)?)\s*[kK]"
+            r"(?:\s*[–-]\s*\$?\s*(\d+(?:\.\d+)?)\s*[kK])?",
+            text,
+        )
+
+        if usd:
+            minimum_usd = float(usd.group(1))
+
+            maximum_usd = (
+                float(usd.group(2))
+                if usd.group(2)
+                else minimum_usd
+            )
+
+            # Approximate USD -> INR.
+            # Used only for normalized scoring.
+            usd_to_inr = 85
+
+            return (
+                minimum_usd * 1000 * usd_to_inr / 100000,
+                maximum_usd * 1000 * usd_to_inr / 100000,
+            )
+
+        return None, None
+
+    # ---------------------------------------------------------
+    # Experience parsing
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _extract_experience(text: str):
+        if not text:
+            return None
+
+        match = re.search(
+            r"(\d+(?:\.\d+)?)\s*(?:\+)?\s*years?\s+of\s+exp",
+            text,
+            re.IGNORECASE,
+        )
+
+        if match:
+            experience_text = match.group(0)
+
+            return (
+                experience_text,
+                parse_experience_years(experience_text),
+            )
+
+        match = re.search(
+            r"(\d+(?:\.\d+)?)\s*(?:\+)?\s*months?"
+            r"(?:\s+of\s+experience)?",
+            text,
+            re.IGNORECASE,
+        )
+
+        if match:
+            experience_text = match.group(0)
+
+            return (
+                experience_text,
+                parse_experience_years(experience_text),
+            )
+
+        return None, None
+
+    # ---------------------------------------------------------
+    # Location
+    # ---------------------------------------------------------
+
+    @staticmethod
+    def _extract_location(text: str) -> str:
+        if not text:
+            return ""
+
+        match = re.search(
+            r"(?:In office|Remote only|Onsite or remote|"
+            r"On-site or remote|Remote)\s*[•·]\s*(.+?)(?:\s+\d+\s+years?\s+of\s+exp|\s+\d+\s+months?\s+of\s+exp|\s+\d+\s+(?:day|week|month|year)s?\s+ago|$)",
+            text,
+            re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1).strip()
+
+        return ""
+
+    @staticmethod
+    def _extract_remote_type(text: str) -> str:
+        text_lower = text.lower()
+
+        if "remote only" in text_lower:
+            return "Remote"
+
+        if "onsite or remote" in text_lower:
+            return "Hybrid/Remote"
+
+        if "on-site or remote" in text_lower:
+            return "Hybrid/Remote"
+
+        if "remote" in text_lower:
+            return "Remote"
+
+        if "in office" in text_lower:
+            return "On-site"
+
+        return ""
+
+    # ---------------------------------------------------------
+    # Company extraction
+    # ---------------------------------------------------------
+
+    async def _extract_company(
+        self,
+        link,
+        job_text: str,
+    ) -> str:
+
+        # Walk upward looking for a nearby company link.
+        result = await link.evaluate(
+            """
+            el => {
+                let node = el;
+
+                for (let i = 0; i < 8 && node; i++) {
+                    const companyLinks =
+                        node.querySelectorAll("a[href*='/company/']");
+
+                    if (companyLinks.length > 0) {
+                        return companyLinks[0].innerText.trim();
+                    }
+
+                    node = node.parentElement;
+                }
+
+                return "";
+            }
+            """
+        )
+
+        return self._clean_text(result)
+
+    # ---------------------------------------------------------
+    # Job card extraction
+    # ---------------------------------------------------------
+
+    async def _extract_job_from_link(self, link) -> Optional[Dict[str, Any]]:
+        href = await link.get_attribute("href")
+
+        if not href or "/jobs/" not in href:
+            return None
+
+        application_url = self._absolute_url(href)
+
+        job_id = self._extract_job_id(href)
+
+        title = self._clean_text(await link.inner_text())
+
+        if not title:
+            return None
+
+        # -----------------------------------------------------
+        # Find the smallest useful ancestor containing metadata.
+        # -----------------------------------------------------
+
+        card_text = await link.evaluate(
+            """
+            el => {
+                let node = el;
+
+                for (let i = 0; i < 8 && node; i++) {
+                    const text = (node.innerText || "").trim();
+
+                    if (
+                        text.length >= 50 &&
+                        text.length <= 1200 &&
+                        (
+                            text.includes("Full-time") ||
+                            text.includes("Part-time") ||
+                            text.includes("years of exp") ||
+                            text.includes("months of exp") ||
+                            text.includes("Remote") ||
+                            text.includes("In office") ||
+                            text.includes("₹") ||
+                            text.includes("$")
+                        )
+                    ) {
+                        return text;
+                    }
+
+                    node = node.parentElement;
+                }
+
+                return "";
+            }
+            """
+        )
+
+        card_text = self._clean_text(card_text)
+
+        if not card_text:
+            card_text = title
+
+        company = await self._extract_company(
+            link,
+            card_text,
+        )
+
+        # -----------------------------------------------------
+        # Experience
+        # -----------------------------------------------------
+
+        experience_required, experience_years = (
+            self._extract_experience(card_text)
+        )
+
+        # -----------------------------------------------------
+        # Location / remote
+        # -----------------------------------------------------
+
+        location = self._extract_location(card_text)
+
+        remote_type = self._extract_remote_type(card_text)
+
+        # -----------------------------------------------------
+        # Salary
+        # -----------------------------------------------------
+
+        salary_min_lpa, salary_max_lpa = self._parse_salary(
+            card_text
+        )
+
+        return {
+            "id": job_id or f"wf-{abs(hash(application_url))}",
+            "title": title,
+            "company": company,
+            "location": location,
+            "remote_type": remote_type,
+            "experience_required": experience_required or "",
+            "experience_years_required": experience_years,
+            "required_skills_text": "",
+            "preferred_skills_text": "",
+            "salary_min_lpa": salary_min_lpa,
+            "salary_max_lpa": salary_max_lpa,
+            "description": card_text,
+            "application_url": application_url,
+            "source_url": application_url,
+            "posted_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ---------------------------------------------------------
+    # Fetch one Wellfound page
+    # ---------------------------------------------------------
+
+    async def _fetch_url_jobs(
+        self,
+        page,
+        url: str,
+    ) -> List[Dict[str, Any]]:
+
+        await page.set_extra_http_headers(
+            {
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+        )
+
+        logger.info("Navigating to %s", url)
+
+        response = await page.goto(
+            url,
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
+
+        if response and response.status != 200:
+            raise Exception(
+                f"HTTP Status {response.status}"
+            )
+
+        await page.wait_for_timeout(4000)
+
+        links = await page.query_selector_all(
+            "a[href*='/jobs/']"
+        )
+
+        logger.info(
+            "Found %d Wellfound job links",
+            len(links),
+        )
+
+        jobs = []
+
+        seen_ids = set()
+
+        for link in links:
+            try:
+                job = await self._extract_job_from_link(link)
+
+                if not job:
+                    continue
+
+                if job["id"] in seen_ids:
+                    continue
+
+                seen_ids.add(job["id"])
+
+                jobs.append(job)
+
+            except Exception as exc:
+                logger.debug(
+                    "Failed to parse Wellfound job: %s",
+                    exc,
+                )
+
+        return jobs
+
+    # ---------------------------------------------------------
+    # Convert raw job to Job
+    # ---------------------------------------------------------
+
+    def _parse_job(
+        self,
+        raw_job: Dict[str, Any],
+    ) -> Job:
+
         posted_at = raw_job.get("posted_at")
+
         if isinstance(posted_at, str):
             try:
-                posted_at = datetime.fromisoformat(posted_at)
+                posted_at = datetime.fromisoformat(
+                    posted_at
+                )
             except ValueError:
                 posted_at = datetime.now(timezone.utc)
+
         elif not isinstance(posted_at, datetime):
             posted_at = datetime.now(timezone.utc)
 
         if posted_at.tzinfo is None:
-            posted_at = posted_at.replace(tzinfo=timezone.utc)
+            posted_at = posted_at.replace(
+                tzinfo=timezone.utc
+            )
 
-        req_skills_raw = raw_job.get("required_skills") or raw_job.get(
-            "required_skills_text"
-        )
-        if isinstance(req_skills_raw, str):
-            req_skills = [
-                s.strip().lower() for s in req_skills_raw.split(",") if s.strip()
+        required_skills = []
+
+        if raw_job.get("required_skills_text"):
+            required_skills = [
+                x.strip().lower()
+                for x in raw_job["required_skills_text"].split(",")
+                if x.strip()
             ]
-        elif isinstance(req_skills_raw, list):
-            req_skills = [str(s).strip().lower() for s in req_skills_raw if s]
-        else:
-            req_skills = ["python", "machine learning"]
 
-        pref_skills_raw = raw_job.get("preferred_skills") or raw_job.get(
-            "preferred_skills_text"
-        )
-        if isinstance(pref_skills_raw, str):
-            pref_skills = [
-                s.strip().lower() for s in pref_skills_raw.split(",") if s.strip()
+        preferred_skills = []
+
+        if raw_job.get("preferred_skills_text"):
+            preferred_skills = [
+                x.strip().lower()
+                for x in raw_job["preferred_skills_text"].split(",")
+                if x.strip()
             ]
-        elif isinstance(pref_skills_raw, list):
-            pref_skills = [str(s).strip().lower() for s in pref_skills_raw if s]
-        else:
-            pref_skills = ["fastapi", "pytorch"]
-
-        raw_desc = raw_job.get("description", "")
-        clean_desc = re.sub(r"<[^>]+>", "", raw_desc).strip()
 
         return Job(
             id=str(raw_job.get("id", "")),
             title=raw_job.get("title", ""),
             company=raw_job.get("company", ""),
             location=raw_job.get("location", ""),
-            remote_type=raw_job.get("remote_type"),
-            experience_required=raw_job.get("experience_required"),
-            experience_years_required=raw_job.get("experience_years_required", 0.0),
-            required_skills=req_skills,
-            preferred_skills=pref_skills,
-            salary_min_lpa=raw_job.get("salary_min_lpa"),
-            salary_max_lpa=raw_job.get("salary_max_lpa"),
-            description=clean_desc,
-            application_url=raw_job.get("application_url"),
-            source_url=raw_job.get("source_url", ""),
+            remote_type=raw_job.get("remote_type", ""),
+            experience_required=raw_job.get(
+                "experience_required",
+                "",
+            ),
+            experience_years_required=raw_job.get(
+                "experience_years_required"
+            ),
+            required_skills=required_skills,
+            preferred_skills=preferred_skills,
+            salary_min_lpa=raw_job.get(
+                "salary_min_lpa"
+            ),
+            salary_max_lpa=raw_job.get(
+                "salary_max_lpa"
+            ),
+            description=self._clean_text(
+            raw_job.get("description", "")
+            ),
+            application_url=raw_job.get(
+                "application_url",
+                "",
+            ),
+            source_url=raw_job.get(
+                "source_url",
+                "",
+            ),
             source="wellfound",
             posted_at=posted_at,
         )
 
-    async def _fetch_url_jobs(self, page, url: str) -> List[Dict[str, Any]]:
-        await page.set_extra_http_headers({
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-
-        logger.info(f"Navigating to {url} with Playwright...")
-        response = await page.goto(
-            url, wait_until="domcontentloaded", timeout=30000
-        )
-
-        if response and response.status != 200:
-            raise Exception(f"HTTP Status {response.status}")
-
-        # Scroll down to trigger dynamic loading of listings
-        await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2);")
-        await page.wait_for_timeout(3000)
-
-        extracted_data = await page.evaluate("""
-            () => {
-                try {
-                    const nextData = document.getElementById('__NEXT_DATA__');
-                    if (nextData) return JSON.parse(nextData.textContent);
-                    if (window.__APOLLO_STATE__) return { apolloState: window.__APOLLO_STATE__ };
-                } catch (e) {
-                    return null;
-                }
-                return null;
-            }
-        """)
-
-        parsed_jobs = []
-
-        if extracted_data:
-            try:
-                props = extracted_data.get("props", {}).get("pageProps", {})
-                apollo_state = props.get("apolloState", {}) or extracted_data.get("apolloState", {})
-
-                # Build explicit lookup for Startup nodes
-                startup_map = {}
-                for key, val in apollo_state.items():
-                    if isinstance(val, dict) and val.get("__typename") in ("Startup", "Company"):
-                        name = val.get("name")
-                        if name:
-                            startup_map[key] = name
-                            if val.get("id"):
-                                startup_map[str(val.get("id"))] = name
-
-                for key, val in apollo_state.items():
-                    if isinstance(val, dict) and val.get("__typename") in ("JobListing", "Job"):
-                        raw_title = val.get("title") or ""
-                        if not raw_title or "results" in raw_title.lower():
-                            continue
-
-                        # Extract explicit company name
-                        company_name = None
-                        startup_ref = val.get("startup") or val.get("company")
-                        
-                        if isinstance(startup_ref, dict):
-                            company_name = startup_ref.get("name")
-                            if not company_name and "__ref" in startup_ref:
-                                company_name = startup_map.get(startup_ref["__ref"])
-                        elif isinstance(startup_ref, str):
-                            company_name = startup_map.get(startup_ref)
-
-                        app_url = val.get("userCanonicalUrl") or val.get("url") or url
-                        if app_url and not app_url.startswith("http"):
-                            app_url = f"https://wellfound.com{app_url}"
-
-                        # Handle fallback company resolution
-                        if not company_name or company_name.lower() in ("startup", "company"):
-                            company_name = self._extract_company_from_slug(app_url)
-
-                        parsed_jobs.append({
-                            "id": str(val.get("id", f"wf-{len(parsed_jobs)}")),
-                            "title": raw_title.strip(),
-                            "company": company_name.strip(),
-                            "location": "India",
-                            "remote_type": "Remote" if val.get("remote") else "On-site",
-                            "experience_required": "0 years",
-                            "experience_years_required": 0.0,
-                            "required_skills_text": "python, machine learning, ai",
-                            "preferred_skills_text": "fastapi, pytorch",
-                            "salary_min_lpa": 10.0,
-                            "salary_max_lpa": 20.0,
-                            "description": val.get("description", f"{raw_title} position at {company_name}"),
-                            "application_url": app_url,
-                            "source_url": app_url,
-                            "posted_at": datetime.now(timezone.utc).isoformat(),
-                        })
-            except Exception as parse_err:
-                logger.debug(f"Apollo state parsing error: {parse_err}")
-
-        # DOM Fallback parsing if JSON state returns empty or insufficient data
-        if len(parsed_jobs) < 2:
-            cards = await page.query_selector_all("div[class*='styles_component'], div[class*='jobListing'], div[data-test='JobListItem']")
-            for idx, card in enumerate(cards):
-                try:
-                    # Select specific company title and job role elements
-                    comp_elem = await card.query_selector("h2, a[href*='/company/']")
-                    role_elem = await card.query_selector("a[href*='/jobs/']")
-
-                    if role_elem:
-                        job_title = (await role_elem.inner_text()).strip()
-                        href = await role_elem.get_attribute("href") or url
-                        if href and not href.startswith("http"):
-                            href = f"https://wellfound.com{href}"
-
-                        company_name = (await comp_elem.inner_text()).strip() if comp_elem else "Startup"
-                        if company_name == "Startup" or company_name == job_title:
-                            company_name = self._extract_company_from_slug(href)
-
-                        if job_title and len(job_title) > 3:
-                            parsed_jobs.append({
-                                "id": f"wf-dom-{idx}",
-                                "title": job_title,
-                                "company": company_name,
-                                "location": "India",
-                                "remote_type": "Remote",
-                                "experience_required": "0 years",
-                                "experience_years_required": 0.0,
-                                "required_skills_text": "python, machine learning, ai",
-                                "preferred_skills_text": "fastapi, pytorch",
-                                "salary_min_lpa": 10.0,
-                                "salary_max_lpa": 20.0,
-                                "description": f"{job_title} position at {company_name}",
-                                "application_url": href,
-                                "source_url": href,
-                                "posted_at": datetime.now(timezone.utc).isoformat(),
-                            })
-                except Exception as dom_err:
-                    logger.debug(f"DOM parsing error: {dom_err}")
-
-        return parsed_jobs
+    # ---------------------------------------------------------
+    # Async collector
+    # ---------------------------------------------------------
 
     async def collect_async(self) -> List[Job]:
+
         jobs: List[Job] = []
-        fallback_data = [
-            {
-                "id": "wf-101",
-                "title": "AI Software Engineer",
-                "company": "TechCorp India",
-                "location": "Bengaluru, India",
-                "remote_type": "Remote",
-                "experience_required": "0 years",
-                "experience_years_required": 0.0,
-                "required_skills_text": "python, machine learning",
-                "preferred_skills_text": "fastapi, pytorch",
-                "salary_min_lpa": 12.0,
-                "salary_max_lpa": 18.0,
-                "description": "Building AI microservices and LLM pipelines using Python.",
-                "application_url": "https://wellfound.com/role/l/ai-engineer/india",
-                "source_url": "https://wellfound.com/role/l/ai-engineer/india",
-                "posted_at": datetime.now(timezone.utc).isoformat(),
-            }
-        ]
 
         async with async_playwright() as p:
+
             browser = await p.chromium.launch(
                 headless=True,
-                args=["--disable-blink-features=AutomationControlled"],
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                ],
             )
+
             context = await browser.new_context(
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -259,40 +559,77 @@ class WellfoundCollector:
                     "Chrome/120.0.0.0 Safari/537.36"
                 )
             )
+
             page = await context.new_page()
 
+            seen_job_ids = set()
+
             for url in self.urls:
+
                 try:
-                    raw_jobs = await self._fetch_url_jobs(page, url)
-                    if not raw_jobs:
-                        raise Exception("No valid job nodes scraped.")
-                    for item in raw_jobs:
-                        jobs.append(self._parse_job(item))
-                except Exception as e:
-                    logger.warning(
-                        f"Wellfound Playwright scraping failed ({e}). Loading fallback jobs."
+
+                    raw_jobs = await self._fetch_url_jobs(
+                        page,
+                        url,
                     )
-                    for item in fallback_data:
-                        jobs.append(self._parse_job(item))
+
+                    for raw_job in raw_jobs:
+
+                        job_id = raw_job["id"]
+
+                        if job_id in seen_job_ids:
+                            continue
+
+                        seen_job_ids.add(job_id)
+
+                        jobs.append(
+                            self._parse_job(raw_job)
+                        )
+
+                except Exception as exc:
+
+                    logger.warning(
+                        "Wellfound collection failed for %s: %s",
+                        url,
+                        exc,
+                    )
 
             await browser.close()
 
+        logger.info(
+            "Wellfound collector collected %d jobs",
+            len(jobs),
+        )
+
         return jobs
 
+    # ---------------------------------------------------------
+    # Sync wrapper
+    # ---------------------------------------------------------
+
     def collect(self) -> List[Job]:
-        """Synchronous wrapper for pipeline compatibility."""
+
         import asyncio
 
         try:
             loop = asyncio.get_event_loop()
+
         except RuntimeError:
+
             loop = asyncio.new_event_loop()
+
             asyncio.set_event_loop(loop)
 
         if loop.is_running():
+
             import nest_asyncio
 
             nest_asyncio.apply()
-            return loop.run_until_complete(self.collect_async())
-        else:
-            return loop.run_until_complete(self.collect_async())
+
+            return loop.run_until_complete(
+                self.collect_async()
+            )
+
+        return loop.run_until_complete(
+            self.collect_async()
+        )

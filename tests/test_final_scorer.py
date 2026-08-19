@@ -54,6 +54,11 @@ def make_job(**kwargs):
     return Job(**defaults)
 
 
+# ============================================================
+# Experience scoring
+# ============================================================
+
+
 def test_experience_score_no_requirement():
 
     candidate = make_candidate(
@@ -84,10 +89,10 @@ def test_experience_score_meets_requirement():
     ) == 100.0
 
 
-def test_experience_score_partial_match():
+def test_experience_score_exceeds_requirement():
 
     candidate = make_candidate(
-        experience_years=1,
+        experience_years=4,
     )
 
     job = make_job(
@@ -97,7 +102,44 @@ def test_experience_score_partial_match():
     assert calculate_experience_score(
         candidate,
         job,
+    ) == 100.0
+
+
+def test_experience_score_partial_match():
+
+    candidate = make_candidate(
+        experience_years=1,
+    )
+
+    job = make_job(
+        experience_required="2+ years of experience",
+    )
+
+    assert calculate_experience_score(
+        candidate,
+        job,
     ) == 50.0
+
+
+def test_experience_score_zero_candidate_experience():
+
+    candidate = make_candidate(
+        experience_years=0,
+    )
+
+    job = make_job(
+        experience_required="2+ years of experience",
+    )
+
+    assert calculate_experience_score(
+        candidate,
+        job,
+    ) == 0.0
+
+
+# ============================================================
+# Location scoring
+# ============================================================
 
 
 def test_location_score_matching_location():
@@ -148,7 +190,28 @@ def test_location_score_remote():
     ) == 100.0
 
 
-def test_final_score_weighting():
+def test_location_score_no_preference():
+
+    candidate = make_candidate(
+        preferred_locations=[],
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+    )
+
+    assert calculate_location_score(
+        candidate,
+        job,
+    ) == 100.0
+
+
+# ============================================================
+# Final score
+# ============================================================
+
+
+def test_final_score_perfect_match():
 
     score = calculate_final_score(
         skill_score=100,
@@ -172,11 +235,117 @@ def test_final_score_zero():
     assert score == 0.0
 
 
+def test_final_score_weighting():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=80,
+        experience_score=50,
+        location_score=100,
+    )
+
+    # Raw weighted score is 84.
+    # Experience score of 50 triggers the <60 experience cap.
+    # Therefore final score must be capped at 72.
+    assert score == 72.0
+
+
+# ============================================================
+# Role mismatch caps
+# ============================================================
+
+
+def test_role_score_below_40_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=30,
+        experience_score=100,
+        location_score=100,
+    )
+
+    assert score == 50.0
+
+
+def test_role_score_below_60_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=50,
+        experience_score=100,
+        location_score=100,
+    )
+
+    assert score == 65.0
+
+
+def test_role_score_below_75_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=70,
+        experience_score=100,
+        location_score=100,
+    )
+
+    assert score == 78.0
+
+
+# ============================================================
+# Experience mismatch caps
+# ============================================================
+
+
+def test_experience_score_below_20_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=100,
+        experience_score=10,
+        location_score=100,
+    )
+
+    assert score == 50.0
+
+
+def test_experience_score_below_40_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=100,
+        experience_score=30,
+        location_score=100,
+    )
+
+    assert score == 60.0
+
+
+def test_experience_score_below_60_caps_final_score():
+
+    score = calculate_final_score(
+        skill_score=100,
+        role_score=100,
+        experience_score=50,
+        location_score=100,
+    )
+
+    assert score == 72.0
+
+
+# ============================================================
+# Individual job scoring
+# ============================================================
+
+
 def test_score_job_returns_match():
 
-    candidate = make_candidate()
+    candidate = make_candidate(
+        experience_years=2,
+    )
 
-    job = make_job()
+    job = make_job(
+    experience_required="2+ years of experience",
+)
 
     match = score_job(
         candidate,
@@ -190,6 +359,44 @@ def test_score_job_returns_match():
     assert match.experience_score == 100.0
     assert match.location_score == 100.0
     assert match.final_score > 0
+    assert match.eligibility_reasons == []
+
+
+def test_score_job_contains_eligibility_reasons():
+
+    candidate = make_candidate(
+        experience_years=1,
+        preferred_locations=["India"],
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+        experience_years_required=3,
+    )
+
+    match = score_job(
+        candidate,
+        job,
+    )
+
+    assert match.eligible is False
+
+    assert len(match.eligibility_reasons) == 2
+
+    assert any(
+        "3+ years" in reason
+        for reason in match.eligibility_reasons
+    )
+
+    assert any(
+        "outside preferred locations" in reason
+        for reason in match.eligibility_reasons
+    )
+
+
+# ============================================================
+# Ranking
+# ============================================================
 
 
 def test_ineligible_jobs_are_excluded():
@@ -253,34 +460,3 @@ def test_jobs_are_ranked_by_final_score():
     assert len(results) == 2
     assert results[0].job.id == "strong"
     assert results[1].job.id == "weak"
-    
-def test_score_job_contains_eligibility_reasons():
-
-    candidate = make_candidate(
-        experience_years=1,
-        preferred_locations=["India"],
-    )
-
-    job = make_job(
-        location="Hawthorne, CA",
-        experience_years_required=3,
-    )
-
-    match = score_job(
-        candidate,
-        job,
-    )
-
-    assert match.eligible is False
-
-    assert len(match.eligibility_reasons) == 2
-
-    assert any(
-        "3+ years" in reason
-        for reason in match.eligibility_reasons
-    )
-
-    assert any(
-        "outside preferred locations" in reason
-        for reason in match.eligibility_reasons
-    )

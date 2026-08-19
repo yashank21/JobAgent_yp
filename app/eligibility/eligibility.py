@@ -7,13 +7,16 @@ before the job is scored and ranked.
 
 import re
 from dataclasses import dataclass
-from app.location.location_normalizer import normalize_location, location_matches
+
+from app.location.location_normalizer import location_matches
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.scoring.role_normalizer import (
     RoleFamily,
     classify_role,
 )
+from app.eligibility.seniority import classify_seniority
+
 
 @dataclass
 class EligibilityResult:
@@ -35,20 +38,31 @@ def is_location_eligible(
     job: Job | str,
 ) -> bool:
     """
-    Check if a job's location matches candidate preferences using location_normalizer.
+    Check if a job's location matches candidate preferences.
     """
+
     if isinstance(candidate, list):
         preferred_locations = candidate
     else:
-        preferred_locations = getattr(candidate, "preferred_locations", [])
+        preferred_locations = getattr(
+            candidate,
+            "preferred_locations",
+            [],
+        )
 
     if isinstance(job, str):
-        job_loc = job
+        job_location = job
     else:
-        job_loc = getattr(job, "location", "")
+        job_location = getattr(
+            job,
+            "location",
+            "",
+        )
 
-    # Delegate strictly to location_normalizer.py
-    return location_matches(job_loc, preferred_locations)
+    return location_matches(
+        job_location,
+        preferred_locations,
+    )
 
 
 def is_experience_eligible(
@@ -56,23 +70,53 @@ def is_experience_eligible(
     job: Job,
 ) -> bool:
     """
-    Check whether the candidate meets experience requirements.
-    Early-career candidates (<1 year) are given a small buffer (e.g., up to 2 years max required).
+    Check whether the candidate meets the job's minimum
+    experience requirement.
+
+    Eligibility is a hard requirement.
+
+    Unlike the scoring layer, we do NOT give the candidate
+    an artificial experience buffer.
+
+    Examples:
+
+        Candidate: 2 years
+        Required:  2 years
+        -> eligible
+
+        Candidate: 3 years
+        Required:  2 years
+        -> eligible
+
+        Candidate: 1 year
+        Required:  2 years
+        -> NOT eligible
+
+        No experience requirement
+        -> eligible
     """
+
     required_experience = getattr(
         job,
         "experience_years_required",
         None,
     )
 
-    if required_experience is None or required_experience <= 0:
+    # No explicit requirement.
+    if required_experience is None:
         return True
 
-    # Allow early career candidates (0-1 year exp) to match entry/junior roles requesting up to 2 years
-    candidate_exp = getattr(candidate, "experience_years", 0)
-    max_allowed_req = candidate_exp + (1.5 if candidate_exp <= 1.0 else 0.5)
+    # Zero or negative means no minimum experience.
+    if required_experience <= 0:
+        return True
 
-    return candidate_exp >= required_experience or required_experience <= max_allowed_req
+    candidate_experience = getattr(
+        candidate,
+        "experience_years",
+        0.0,
+    )
+
+    return candidate_experience >= required_experience
 
 
 def is_role_eligible(
@@ -80,39 +124,60 @@ def is_role_eligible(
     job: Job,
 ) -> bool:
     """
-    Check whether the job matches candidate preferred role families or technical keywords.
+    Check whether the job matches candidate preferred role families
+    or technical keywords.
     """
-    preferred_roles = getattr(candidate, "preferred_roles", [])
+
+    preferred_roles = getattr(
+        candidate,
+        "preferred_roles",
+        [],
+    )
+
     if not preferred_roles:
         return True
 
-    job_title = job.title.lower()
-    job_family = classify_role(job.title)
+    job_title = (
+        job.title or ""
+    ).lower()
 
-    # Direct keyword fallback for generic titles like "Member of Technical Staff", "Software Engineer", etc.
-    tech_keywords = [
-        "software", "engineer", "developer", "machine learning", "ml", "ai", 
-        "data scientist", "backend", "fullstack", "research", "applied scientist"
-    ]
-    
-    # If role_normalizer classifies it, match family
+    job_family = classify_role(
+        job.title
+    )
+
+        # Compare the job's role family with the
+    # candidate's preferred role families.
+
     for role in preferred_roles:
-        candidate_family = classify_role(role)
-        if candidate_family != RoleFamily.UNKNOWN and candidate_family == job_family:
-            return True
 
-    # Fallback: if family classification failed, check explicit technical keyword presence
-    if job_family == RoleFamily.UNKNOWN and any(kw in job_title for kw in tech_keywords):
-        return True
+        candidate_family = classify_role(
+            role
+        )
+
+        if (
+            candidate_family != RoleFamily.UNKNOWN
+            and candidate_family == job_family
+        ):
+            return True
 
     return False
 
 
-def has_work_authorization_restriction(job: Job) -> bool:
+def has_work_authorization_restriction(
+    job: Job,
+) -> bool:
     """
-    Detect work-authorization restrictions that exclude Indian candidates.
+    Detect work-authorization restrictions that exclude
+    Indian candidates.
     """
-    text = _normalize(getattr(job, "description", ""))
+
+    text = _normalize(
+        getattr(
+            job,
+            "description",
+            "",
+        )
+    )
 
     patterns = [
         r"\bitar\b",
@@ -126,7 +191,13 @@ def has_work_authorization_restriction(job: Job) -> bool:
         r"authorized to work in the united states",
     ]
 
-    return any(re.search(pattern, text) for pattern in patterns)
+    return any(
+        re.search(
+            pattern,
+            text,
+        )
+        for pattern in patterns
+    )
 
 
 def is_work_authorization_eligible(
@@ -134,13 +205,30 @@ def is_work_authorization_eligible(
     job: Job,
 ) -> bool:
     """
-    Reject jobs that strictly demand US citizenship/ITAR for non-US candidate profiles.
+    Reject jobs that strictly demand US citizenship/ITAR
+    for non-US candidate profiles.
     """
-    pref_locs = [p.lower() for p in getattr(candidate, "preferred_locations", [])]
-    is_india_focused = any("india" in loc or "bengaluru" in loc or "pune" in loc for loc in pref_locs)
 
-    # If candidate is looking for India/Remote roles and the job mandates US citizenship/ITAR -> Reject
-    if is_india_focused and has_work_authorization_restriction(job):
+    preferred_locations = [
+        location.lower()
+        for location in getattr(
+            candidate,
+            "preferred_locations",
+            [],
+        )
+    ]
+
+    is_india_focused = any(
+        "india" in location
+        or "bengaluru" in location
+        or "pune" in location
+        for location in preferred_locations
+    )
+
+    if (
+        is_india_focused
+        and has_work_authorization_restriction(job)
+    ):
         return False
 
     return True
@@ -153,33 +241,83 @@ def check_eligibility(
     """
     Run all hard eligibility checks and return detailed reasons.
     """
+
     reasons: list[str] = []
 
-    # 1. Location Check
-    if not is_location_eligible(candidate, job):
-        reasons.append("outside preferred locations")
+    # --------------------------------------------------------
+    # 1. Location
+    # --------------------------------------------------------
 
-    # 2. Work Authorization Check
-    if not is_work_authorization_eligible(candidate, job):
-        reasons.append("work authorization restriction (US/ITAR strictly required)")
+    if not is_location_eligible(
+        candidate,
+        job,
+    ):
+        reasons.append(
+            "outside preferred locations"
+        )
 
-    # 3. Role Check
-    if not is_role_eligible(candidate, job):
-        reasons.append("does not match preferred roles")
+    # --------------------------------------------------------
+    # 2. Work authorization
+    # --------------------------------------------------------
 
-    # 4. Experience Check
-    if not is_experience_eligible(candidate, job):
-        required_experience = getattr(job, "experience_years_required", None)
+    if not is_work_authorization_eligible(
+        candidate,
+        job,
+    ):
+        reasons.append(
+            "work authorization restriction "
+            "(US/ITAR strictly required)"
+        )
+
+    # --------------------------------------------------------
+    # 3. Role
+    # --------------------------------------------------------
+
+    if not is_role_eligible(
+        candidate,
+        job,
+    ):
+        reasons.append(
+            "does not match preferred roles"
+        )
+
+    # --------------------------------------------------------
+    # 4. Experience
+    # --------------------------------------------------------
+
+    if not is_experience_eligible(
+        candidate,
+        job,
+    ):
+        required_experience = getattr(
+            job,
+            "experience_years_required",
+            None,
+        )
+
         if required_experience is not None:
-            reasons.append(f"{required_experience:g}+ years experience required")
+            reasons.append(
+                f"{required_experience:g}+ years experience required"
+            )
         else:
-            reasons.append("experience requirement not met")
+            reasons.append(
+                "experience requirement not met"
+            )
+    # --------------------------------------------------------
+    # 5. Seniority
+    # --------------------------------------------------------
 
+    if not is_seniority_eligible(
+        candidate,
+        job,
+    ):
+        reasons.append(
+            "job seniority is above candidate level"
+        )
     return EligibilityResult(
         eligible=len(reasons) == 0,
         reasons=reasons,
     )
-
 
 def is_job_eligible(
     candidate: CandidateProfile,
@@ -188,4 +326,27 @@ def is_job_eligible(
     """
     Backward-compatible alias for check_eligibility().
     """
-    return check_eligibility(candidate, job)
+
+    return check_eligibility(
+        candidate,
+        job,
+    )
+    
+def is_seniority_eligible(
+    candidate: CandidateProfile,
+    job: Job,
+) -> bool:
+    """
+    Reject jobs clearly above the candidate's current seniority.
+    """
+
+    seniority = classify_seniority(job.title)
+
+    # Current candidate is early-career.
+    if candidate.experience_years < 2.0:
+        return seniority not in {
+            "senior",
+            "manager",
+        }
+
+    return True

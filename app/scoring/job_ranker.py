@@ -1,43 +1,41 @@
 """
 Job ranking utilities.
 
-Ranks only eligible jobs for a candidate using their
-overall match score.
+Compatibility wrapper around the V2 scoring engine.
+
+The authoritative ranking implementation lives in
+app.scoring.final_scorer.
 """
 
-from app.eligibility.eligibility import check_eligibility
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
-from app.scoring.job_scorer import calculate_job_score
+from app.scoring.final_scorer import rank_jobs as rank_jobs_v2
 
 
 def rank_jobs(
     candidate: CandidateProfile,
     jobs: list[Job],
     limit: int | None = None,
-) -> list[tuple[Job, float, list[str]]]:
+):
     """
-    Rank eligible jobs from highest to lowest candidate match score.
+    Rank jobs using the V2 scoring engine.
 
-    Eligibility is a hard gate:
-    an ineligible job must never be scored or ranked.
+    V2 performs:
+        1. Hard eligibility filtering
+        2. Skill scoring
+        3. Role scoring
+        4. Experience scoring
+        5. Location scoring
+        6. Mismatch caps
+        7. Final ranking
     """
-    scored_jobs = []
 
-    for job in jobs:
-        # 1. Hard Gate: Eligibility Check
-        eligibility = check_eligibility(candidate, job)
-        if not eligibility.eligible:
-            continue  # REJECT IMMEDIATELY — do not score
-
-        # 2. Score only eligible jobs
-        score = calculate_job_score(candidate, job)
-        scored_jobs.append((job, score, eligibility.reasons))
-
-    # Sort descending by match score
-    scored_jobs.sort(key=lambda item: item[1], reverse=True)
+    ranked_jobs = rank_jobs_v2(
+        candidate,
+        jobs,
+    )
 
     if limit is not None:
-        return scored_jobs[:limit]
+        return ranked_jobs[:limit]
 
-    return scored_jobs
+    return ranked_jobs

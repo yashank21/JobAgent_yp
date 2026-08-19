@@ -4,7 +4,10 @@ Match explanation utilities.
 Explains why a candidate matches or does not match a job.
 """
 
-from app.location.location_normalizer import location_matches, normalize_location
+from app.location.location_normalizer import (
+    location_matches,
+    normalize_location,
+)
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.scoring.role_normalizer import (
@@ -70,6 +73,7 @@ def explain_role_match(
     job_family = classify_role(job.title)
 
     for role in candidate.preferred_roles:
+
         candidate_family = classify_role(role)
 
         if (
@@ -93,35 +97,66 @@ def explain_location_match(
     if not candidate.preferred_locations:
         return "✓ No preferred location restriction"
 
-    job_location = job.location.lower()
-    pref_locs = [p.lower() for p in candidate.preferred_locations]
-
-    wants_us = any(
-        us_marker in pref
-        for pref in pref_locs
-        for us_marker in ["us", "usa", "united states"]
+    normalized_job = normalize_location(
+        job.location
     )
 
-    us_indicators = [
-        "united states",
-        " - us",
-        " - usa",
-        ", tx",
-        ", ca",
-        ", wa",
-        ", ny",
-        "remote - us",
-        "remote - usa",
+    # ------------------------------------------------------------
+    # Remote job
+    # ------------------------------------------------------------
+
+    if normalized_job == "Remote":
+
+        for location in candidate.preferred_locations:
+
+            normalized_pref = normalize_location(
+                location
+            )
+
+            if normalized_pref in {
+                "Remote",
+                "India",
+            }:
+                return (
+                    f"✓ Remote job matches preference: "
+                    f"{location}"
+                )
+
+        return (
+            f"✗ Remote job is outside preferred locations "
+            f"({job.location})"
+        )
+
+    # ------------------------------------------------------------
+    # Normal location matching
+    # ------------------------------------------------------------
+
+    if location_matches(
+        job.location,
+        candidate.preferred_locations,
+    ):
+        return (
+            f"✓ Location matches preference: "
+            f"{normalized_job}"
+        )
+
+    # ------------------------------------------------------------
+    # US-specific explanation
+    # ------------------------------------------------------------
+
+    normalized_preferences = [
+        normalize_location(location)
+        for location in candidate.preferred_locations
     ]
-    is_us_job = any(indicator in job_location for indicator in us_indicators)
 
-    if is_us_job and not wants_us:
-        return f"✗ Job is in the US ({job.location}), outside preferred locations"
-
-    for location in candidate.preferred_locations:
-        normalized = _normalize(location)
-        if normalized in job_location:
-            return f"✓ Location matches preference: {location}"
+    if (
+        normalized_job == "United States"
+        and "United States" not in normalized_preferences
+    ):
+        return (
+            f"✗ Job is in the US "
+            f"({job.location}), outside preferred locations"
+        )
 
     return "✗ Job is outside preferred locations"
 

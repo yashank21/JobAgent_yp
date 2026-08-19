@@ -31,10 +31,10 @@ def test_jobs_are_ranked_highest_first():
         [weak_job, strong_job],
     )
 
-    assert ranked[0][0].company == "Strong Corp"
-    assert ranked[1][0].company == "Weak Corp"
+    assert ranked[0].job.company == "Strong Corp"
+    assert ranked[1].job.company == "Weak Corp"
 
-    assert ranked[0][1] > ranked[1][1]
+    assert ranked[0].final_score > ranked[1].final_score
 
 
 def test_rank_jobs_limit():
@@ -63,7 +63,8 @@ def test_rank_jobs_limit():
     )
 
     assert len(ranked) == 5
-    
+
+
 def test_ineligible_jobs_are_not_ranked():
 
     candidate = CandidateProfile(
@@ -97,13 +98,14 @@ def test_ineligible_jobs_are_not_ranked():
     )
 
     companies = [
-        job.company
-        for job, score in ranked
+        match.job.company
+        for match in ranked
     ]
 
     assert "Eligible Corp" in companies
     assert "Ineligible Corp" not in companies
-    
+
+
 def test_role_mismatch_is_not_ranked():
 
     candidate = CandidateProfile(
