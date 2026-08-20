@@ -58,7 +58,7 @@ def parse_experience_years(text: str) -> float | None:
         r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*\d+(?:\.\d+)?\s*years?",
 
         # "2 years of experience"
-        r"(\d+(?:\.\d+)?)\s*years?\s+(?:of\s+)?experience",
+        r"(\d+(?:\.\d+)?)\s*years?\s+(?:of\s+)?(?:experience|exp)\b",
     ]
 
     for pattern in year_patterns:

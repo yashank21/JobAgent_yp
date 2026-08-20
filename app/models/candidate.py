@@ -25,15 +25,19 @@ class CandidateProfile:
 
     experience_years: float = 0.0
 
-    # -----------------------------
+        # -----------------------------
     # Preferences
     # -----------------------------
 
-    preferred_locations: list[str] = field(
+    preferred_roles: list[str] = field(
         default_factory=list
     )
 
-    preferred_roles: list[str] = field(
+    secondary_roles: list[str] = field(
+        default_factory=list
+    )
+
+    preferred_locations: list[str] = field(
         default_factory=list
     )
 

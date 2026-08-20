@@ -3,30 +3,52 @@ from enum import Enum
 
 
 class RoleFamily(str, Enum):
+    # ========================================================
+    # AI / ML
+    # ========================================================
+
     AI_ENGINEERING = "ai_engineering"
     MACHINE_LEARNING = "machine_learning"
     LLM_GENAI = "llm_genai"
     FORWARD_DEPLOYED = "forward_deployed"
 
+    # ========================================================
+    # DATA
+    # ========================================================
+
     DATA_SCIENCE = "data_science"
     DATA_ENGINEERING = "data_engineering"
 
+    # ========================================================
+    # PLATFORM / DEVOPS
+    # ========================================================
+
     DEVOPS_ML_PLATFORM = "devops_ml_platform"
     DEVOPS = "devops"
+
+    # ========================================================
+    # SOFTWARE ENGINEERING
+    # ========================================================
 
     SOFTWARE_ENGINEERING = "software_engineering"
     BACKEND_ENGINEERING = "backend_engineering"
     FRONTEND_ENGINEERING = "frontend_engineering"
 
-    # NEW
+    # ========================================================
+    # SPECIALIZED ENGINEERING
+    # ========================================================
+
     RESEARCH_ENGINEERING = "research_engineering"
     MOBILE_ENGINEERING = "mobile_engineering"
 
-    # NEW — intentionally not candidate-compatible
     SUPPORT_ENGINEERING = "support_engineering"
     CUSTOMER_ENGINEERING = "customer_engineering"
     INTEGRATION_ENGINEERING = "integration_engineering"
     RPA_ENGINEERING = "rpa_engineering"
+
+    # ========================================================
+    # NON-ENGINEERING / MANAGEMENT
+    # ========================================================
 
     MANAGEMENT = "management"
     PRODUCT = "product"
@@ -34,26 +56,153 @@ class RoleFamily(str, Enum):
     UNKNOWN = "unknown"
 
 
-# ------------------------------------------------------------
+class SeniorityLevel(str, Enum):
+    ENTRY = "entry"
+    MID = "mid"
+    SENIOR = "senior"
+    LEAD = "lead"
+    STAFF = "staff"
+    PRINCIPAL = "principal"
+    MANAGER = "manager"
+    DIRECTOR = "director"
+    UNKNOWN = "unknown"
+
+
+# ============================================================
 # ROLE PATTERNS
-# ------------------------------------------------------------
+# ============================================================
 #
 # IMPORTANT:
-# More specific AI/ML families must come BEFORE generic
-# software/backend/platform patterns.
+#
+# Specific roles MUST appear before generic roles.
 #
 # Example:
 #
-# "Software Engineer, Generative AI"
+#   "Software Engineer, Generative AI"
 #       -> LLM_GENAI
 #
 # NOT:
 #
-#       -> SOFTWARE_ENGINEERING
+#   -> SOFTWARE_ENGINEERING
 #
-# ------------------------------------------------------------
+# Similarly:
+#
+#   "Engineering Manager"
+#       -> MANAGEMENT
+#
+# NOT:
+#
+#   -> SOFTWARE_ENGINEERING
+#
+# ============================================================
 
 ROLE_PATTERNS = {
+
+    # ========================================================
+    # MANAGEMENT
+    # ========================================================
+
+    RoleFamily.MANAGEMENT: [
+    r"\bengineering manager\b",
+    r"\bsoftware engineering manager\b",
+    r"\bsoftware development manager\b",
+
+    # Manager + Engineering
+    r"\bmanager.*software engineering\b",
+    r"\bmanager.*engineering\b",
+    r"\bmanager.*software development\b",
+
+    r"\btechnical manager\b",
+    r"\bengineering director\b",
+    r"\bsoftware engineering director\b",
+    r"\bdirector of engineering\b",
+    r"\bdirector of software engineering\b",
+    r"\bhead of engineering\b",
+    r"\bhead of software\b",
+    r"\bvp of engineering\b",
+    r"\bvice president of engineering\b",
+    r"\bengineering lead\b",
+],
+    # ========================================================
+    # PRODUCT
+    # ========================================================
+
+    RoleFamily.PRODUCT: [
+        r"\bproduct manager\b",
+        r"\bproduct management\b",
+        r"\bproduct owner\b",
+        r"\bproduct designer\b",
+        r"\bproduct design\b",
+        r"\bproduct analyst\b",
+        r"\bproduct strategist\b",
+        r"\bproduct strategy\b",
+    ],
+
+    # ========================================================
+    # SUPPORT ENGINEERING
+    # ========================================================
+
+    RoleFamily.SUPPORT_ENGINEERING: [
+        r"\bsupport engineer\b",
+        r"\btechnical support engineer\b",
+        r"\bproduction support engineer\b",
+        r"\bapplication support engineer\b",
+        r"\bsoftware support engineer\b",
+        r"\bsupport developer\b",
+    ],
+
+    # ========================================================
+    # CUSTOMER ENGINEERING
+    # ========================================================
+
+    RoleFamily.CUSTOMER_ENGINEERING: [
+        r"\bcustomer engineer\b",
+        r"\bcustomer success engineer\b",
+        r"\bcustomer solutions engineer\b",
+        r"\bsolutions engineer\b",
+        r"\bfield engineer\b",
+        r"\bfield applications engineer\b",
+    ],
+
+    # ========================================================
+    # INTEGRATION ENGINEERING
+    # ========================================================
+
+    RoleFamily.INTEGRATION_ENGINEERING: [
+        r"\bintegration engineer\b",
+        r"\bintegration developer\b",
+        r"\bintegration software engineer\b",
+        r"\bapi integration engineer\b",
+    ],
+
+    # ========================================================
+    # RPA
+    # ========================================================
+
+    RoleFamily.RPA_ENGINEERING: [
+        r"\brpa engineer\b",
+        r"\brpa developer\b",
+        r"\brpa software engineer\b",
+        r"\brobotic process automation\b",
+        r"\bautomation anywhere\b",
+        r"\buipath developer\b",
+        r"\buipath engineer\b",
+    ],
+
+    # ========================================================
+    # MOBILE
+    # ========================================================
+
+    RoleFamily.MOBILE_ENGINEERING: [
+        r"\bmobile engineer\b",
+        r"\bmobile developer\b",
+        r"\bandroid engineer\b",
+        r"\bandroid developer\b",
+        r"\bios engineer\b",
+        r"\bios developer\b",
+        r"\bflutter developer\b",
+        r"\breact native developer\b",
+    ],
 
     # ========================================================
     # LLM / GENERATIVE AI
@@ -185,6 +334,18 @@ ROLE_PATTERNS = {
     ],
 
     # ========================================================
+    # RESEARCH ENGINEERING
+    # ========================================================
+
+    RoleFamily.RESEARCH_ENGINEERING: [
+        r"\bresearch engineer\b",
+        r"\bresearch engineering\b",
+        r"\bai research engineer\b",
+        r"\bml research engineer\b",
+        r"\bmachine learning research engineer\b",
+    ],
+
+    # ========================================================
     # BACKEND
     # ========================================================
 
@@ -195,7 +356,6 @@ ROLE_PATTERNS = {
         r"\bback-end engineer\b",
         r"\bserver[- ]side engineer\b",
 
-        # Backend + Software Engineer
         r"\bbackend software engineer\b",
         r"\bback end software engineer\b",
         r"\bback-end software engineer\b",
@@ -213,7 +373,6 @@ ROLE_PATTERNS = {
         r"\bui engineer\b",
         r"\bweb engineer\b",
 
-        # Frontend + Software Engineer
         r"\bfrontend software engineer\b",
         r"\bfront end software engineer\b",
         r"\bfront-end software engineer\b",
@@ -245,48 +404,66 @@ ROLE_PATTERNS = {
         r"\bsde\b",
         r"\bnew graduate engineer.*software\b",
     ],
-    
-    RoleFamily.SUPPORT_ENGINEERING: [
-    r"\bsupport engineer\b",
-    r"\btechnical support engineer\b",
-    r"\bproduction support engineer\b",
+}
+
+
+# ============================================================
+# SENIORITY PATTERNS
+# ============================================================
+
+SENIORITY_PATTERNS = {
+    SeniorityLevel.DIRECTOR: [
+        r"\bdirector\b",
+        r"\bvice president\b",
+        r"\bvp\b",
+        r"\bhead of\b",
     ],
-    
-    RoleFamily.CUSTOMER_ENGINEERING: [
-    r"\bcustomer engineer\b",
-    r"\bcustomer success engineer\b",
-    r"\bsolutions engineer\b",
-    r"\bfield engineer\b",
+
+    SeniorityLevel.MANAGER: [
+        r"\bengineering manager\b",
+        r"\bsoftware engineering manager\b",
+        r"\bengineering management\b",
+        r"\bmanager\b",
     ],
-    
-    RoleFamily.INTEGRATION_ENGINEERING: [
-    r"\bintegration engineer\b",
-    r"\bintegration developer\b",
+
+    SeniorityLevel.PRINCIPAL: [
+        r"\bprincipal\b",
     ],
-    
-    RoleFamily.INTEGRATION_ENGINEERING: [
-    r"\bintegration engineer\b",
-    r"\bintegration developer\b",
+
+    SeniorityLevel.STAFF: [
+        r"\bstaff\b",
     ],
-    
-    RoleFamily.RPA_ENGINEERING: [
-    r"\brpa engineer\b",
-    r"\brpa developer\b",
-    r"\brobotic process automation\b",
+
+    SeniorityLevel.LEAD: [
+        r"\blead\b",
+        r"\btech lead\b",
+        r"\btechnical lead\b",
     ],
-    
-    RoleFamily.MANAGEMENT: [
-    r"\bengineering manager\b",
-    r"\bsoftware engineering manager\b",
-    r"\bengineering director\b",
-    r"\bhead of engineering\b",
-    r"\bvp of engineering\b",
+
+    SeniorityLevel.SENIOR: [
+        r"\bsenior\b",
+        r"\bsr\b",
+        r"\bsde 2\b",
+        r"\bsde ii\b",
+        r"\blevel 2\b",
+        r"\blevel ii\b",
     ],
-    
-    RoleFamily.PRODUCT: [
-    r"\bproduct manager\b",
-    r"\bproduct management\b",
-    ]
+
+    SeniorityLevel.MID: [
+        r"\bmid level\b",
+        r"\bmid-level\b",
+        r"\bexperienced\b",
+    ],
+
+    SeniorityLevel.ENTRY: [
+        r"\bjunior\b",
+        r"\bjr\b",
+        r"\bentry level\b",
+        r"\bgraduate\b",
+        r"\bnew grad\b",
+        r"\bnew graduate\b",
+        r"\bearly career\b",
+    ],
 }
 
 
@@ -301,15 +478,13 @@ def normalize_role_title(title: str) -> str:
     title = title.lower().strip()
 
     # --------------------------------------------------------
-    # Remove academic / graduation year ranges BEFORE
-    # replacing separators.
+    # Remove academic / graduation year ranges.
     #
     # Handles:
-    # '26/'27
-    # '26/27
-    # 26/'27
-    # 26/27
-    # 2026/2027
+    #   26/'27
+    #   '26/'27
+    #   26/27
+    #   2026/2027
     # --------------------------------------------------------
 
     title = re.sub(
@@ -345,13 +520,45 @@ def normalize_role_title(title: str) -> str:
     return title.strip()
 
 
+def classify_seniority(title: str) -> SeniorityLevel:
+    """
+    Classify job-title seniority.
+
+    More senior levels are checked first.
+    """
+
+    normalized = normalize_role_title(title)
+
+    if not normalized:
+        return SeniorityLevel.UNKNOWN
+
+    priority_order = [
+        SeniorityLevel.DIRECTOR,
+        SeniorityLevel.MANAGER,
+        SeniorityLevel.PRINCIPAL,
+        SeniorityLevel.STAFF,
+        SeniorityLevel.LEAD,
+        SeniorityLevel.SENIOR,
+        SeniorityLevel.MID,
+        SeniorityLevel.ENTRY,
+    ]
+
+    for level in priority_order:
+        for pattern in SENIORITY_PATTERNS[level]:
+            if re.search(pattern, normalized):
+                return level
+
+    return SeniorityLevel.MID
+
+
 def classify_role(title: str) -> RoleFamily:
     """
     Classify a job title into its most likely role family.
 
-    Pattern order is intentional:
-    specialized AI/ML roles are evaluated before generic
-    software/backend/platform roles.
+    Pattern order is intentional.
+
+    Specialized and non-software roles are evaluated before
+    generic software engineering.
     """
 
     normalized = normalize_role_title(title)

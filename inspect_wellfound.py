@@ -1,127 +1,57 @@
-import json
-import re
-from pathlib import Path
+import asyncio
+
+from playwright.async_api import async_playwright
+from app.collectors.wellfound import WellfoundCollector
 
 
-HTML_FILE = Path("wellfound_debug.html")
+async def main():
 
+    collector = WellfoundCollector()
 
-def load_apollo_data():
-    html = HTML_FILE.read_text(encoding="utf-8")
+    async with async_playwright() as p:
 
-    match = re.search(
-        r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',
-        html,
-        re.DOTALL,
-    )
-
-    if not match:
-        raise RuntimeError("__NEXT_DATA__ not found")
-
-    data = json.loads(match.group(1))
-
-    return (
-        data["props"]
-        ["pageProps"]
-        ["apolloState"]
-        ["data"]
-    )
-
-
-def build_job_company_mapping(apollo_data):
-
-    jobs = {
-        key.split(":", 1)[1]: value
-        for key, value in apollo_data.items()
-        if key.startswith("JobListingSearchResult:")
-    }
-
-    startups = [
-        value
-        for value in apollo_data.values()
-        if (
-            isinstance(value, dict)
-            and value.get("__typename") == "StartupResult"
+        browser = await p.chromium.launch(
+            headless=True
         )
-    ]
 
-    job_to_company = {}
+        page = await browser.new_page()
 
-    for startup in startups:
+        await page.goto(
+            collector.urls[0],
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
 
-        company_name = startup.get("name", "")
+        await page.wait_for_timeout(4000)
 
-        for reference in startup.get(
-            "highlightedJobListings",
-            [],
-        ):
+        links = await page.query_selector_all(
+            "a[href*='/jobs/']"
+        )
 
-            ref = reference.get("__ref", "")
+        print("LINKS:", len(links))
 
-            if not ref.startswith(
-                "JobListingSearchResult:"
-            ):
-                continue
+        if not links:
+            await browser.close()
+            return
 
-            job_id = ref.split(":", 1)[1]
+        href = await links[0].get_attribute("href")
 
-            job_to_company[job_id] = {
-                "company": company_name,
-                "startup_id": startup.get("id", ""),
-                "startup_slug": startup.get("slug", ""),
-                "is_yc": any(
-                    "YC-" in badge.get("__ref", "")
-                    for badge in startup.get("badges", [])
-                ),
-            }
+        print("URL:", href)
 
-    return jobs, job_to_company
+        await page.goto(
+            collector._absolute_url(href),
+            wait_until="domcontentloaded",
+            timeout=30000,
+        )
 
+        await page.wait_for_timeout(2000)
 
-def main():
+        body = await page.locator("body").inner_text()
 
-    apollo_data = load_apollo_data()
+        print("\n========== JOB DETAIL ==========\n")
+        print(body[:8000])
 
-    jobs, job_to_company = (
-        build_job_company_mapping(apollo_data)
-    )
-
-    print("=" * 80)
-    print("WELLFOUND JOB -> COMPANY MAPPING")
-    print("=" * 80)
-
-    print(f"Jobs found: {len(jobs)}")
-    print(
-        f"Jobs with company mapping: "
-        f"{len(job_to_company)}"
-    )
-
-    print()
-
-    for job_id, job in jobs.items():
-
-        company_data = job_to_company.get(job_id)
-
-        if company_data:
-
-            yc = "YES" if company_data["is_yc"] else "NO"
-
-            print(
-                f"{job_id:<10} | "
-                f"{company_data['company']:<30} | "
-                f"YC: {yc:<3} | "
-                f"{job.get('title', '')}"
-            )
-
-        else:
-
-            print(
-                f"{job_id:<10} | "
-                f"{'UNKNOWN':<30} | "
-                f"YC: ?   | "
-                f"{job.get('title', '')}"
-            )
+        await browser.close()
 
 
-if __name__ == "__main__":
-    main()
+asyncio.run(main())

@@ -10,6 +10,8 @@ import re
 
 INDIA_MARKERS = {
     "india",
+
+    # Major cities
     "bengaluru",
     "bangalore",
     "pune",
@@ -23,12 +25,20 @@ INDIA_MARKERS = {
     "chennai",
     "kolkata",
     "ahmedabad",
+    "surat",
+    "vadodara",
+    "vapi",
     "indore",
+    "bhopal",
     "jaipur",
+    "lucknow",
     "chandigarh",
     "kochi",
     "thiruvananthapuram",
     "bhubaneswar",
+    "nagpur",
+    "patna",
+    "visakhapatnam",
     "mysuru",
     "mysore",
 }
@@ -216,14 +226,34 @@ def location_matches(
     """
     Determine whether a job location matches candidate preferences.
 
-    Remote jobs are treated carefully:
+    Rules:
 
-        Remote - India        -> True
-        Remote - United States -> False
-        Remote - United Kingdom -> False
-        Remote                 -> True
+        India preference
+            -> any recognized Indian physical location
 
-    Plain "Remote" is accepted because its country is unknown.
+        Specific city preference
+            -> that city/location only
+
+        Remote
+            -> accepted when country is unknown or India
+            -> rejected when explicitly foreign
+
+    Examples:
+
+        Vapi + ["India"]
+            -> True
+
+        Vapi + ["Pune"]
+            -> False
+
+        Pune + ["Pune"]
+            -> True
+
+        New Delhi + ["India"]
+            -> True
+
+        New Delhi + ["Bengaluru"]
+            -> False
     """
 
     if not preferred_locations:
@@ -233,26 +263,25 @@ def location_matches(
         job_location
     )
 
+    raw_job = _clean(
+        job_location
+    )
+
     # --------------------------------------------------------
     # Remote jobs
     # --------------------------------------------------------
 
     if normalized_job == "Remote":
 
-        raw_job = _clean(job_location)
-
         # Explicit India remote
         if _contains_india(raw_job):
             return True
 
-        # Explicit foreign remote
+        # Explicit US remote
         if _contains_us(raw_job):
             return False
 
-        # Detect explicit non-India remote locations.
-        #
-        # These are examples we can identify without needing
-        # a complete country database.
+        # Explicit foreign remote
         foreign_remote_markers = [
             "united kingdom",
             "uk",
@@ -281,39 +310,135 @@ def location_matches(
         ):
             return False
 
-        # Plain "Remote" with no country.
+        # Plain "Remote" is accepted.
         return True
 
     # --------------------------------------------------------
     # Non-remote jobs
     # --------------------------------------------------------
 
-    normalized_preferences = {
-        normalize_location(preference)
-        for preference in preferred_locations
-    }
-
-    # Exact normalized match
-    if normalized_job in normalized_preferences:
-        return True
-
-    # Specific city/location fallback
-    raw_job = _clean(job_location)
-
     for preferred in preferred_locations:
 
-        normalized_preference = _clean(
+        preferred_raw = _clean(
             preferred
         )
 
-        if not normalized_preference:
+        if not preferred_raw:
             continue
 
-        # Don't use generic "remote" as a substring.
-        if normalized_preference == "remote":
+        # ----------------------------------------------------
+        # India-wide preference
+        # ----------------------------------------------------
+
+        if preferred_raw in {
+            "india",
+            "india only",
+        }:
+
+            if _contains_india(raw_job):
+                return True
+
             continue
 
-        if normalized_preference in raw_job:
+        # ----------------------------------------------------
+        # United States-wide preference
+        # ----------------------------------------------------
+
+        if preferred_raw in {
+            "united states",
+            "usa",
+            "us",
+        }:
+
+            if _contains_us(raw_job):
+                return True
+
+            continue
+
+        # ----------------------------------------------------
+        # India-wide preference
+        # ----------------------------------------------------
+
+        if preferred_raw in {
+            "india",
+            "india only",
+        }:
+
+            if _contains_india(
+                raw_job
+            ):
+                return True
+
+            continue
+
+        # ----------------------------------------------------
+        # Remote preference
+        # ----------------------------------------------------
+
+        if preferred_raw == "remote":
+
+            # A physical job is not a remote job.
+            continue
+
+        # ----------------------------------------------------
+        # Specific location preference
+        # ----------------------------------------------------
+
+        normalized_preference = normalize_location(
+            preferred_raw
+        )
+
+        # IMPORTANT:
+        #
+        # Do NOT compare normalized values here.
+        #
+        # Pune and Vapi both normalize to "India".
+        # That does NOT mean Pune == Vapi.
+        #
+        # Compare the raw/specific location instead.
+        #
+
+        if (
+            preferred_raw == raw_job
+        ):
+            return True
+
+        # Handle common variations.
+        if (
+            preferred_raw == "bengaluru"
+            and raw_job == "bangalore"
+        ):
+            return True
+
+        if (
+            preferred_raw == "bangalore"
+            and raw_job == "bengaluru"
+        ):
+            return True
+
+        if (
+            preferred_raw == "gurugram"
+            and raw_job == "gurgaon"
+        ):
+            return True
+
+        if (
+            preferred_raw == "gurgaon"
+            and raw_job == "gurugram"
+        ):
+            return True
+
+        # Handle locations such as:
+        #
+        # "Pune, India"
+        # "Bengaluru, India"
+        # "New Delhi, India"
+        #
+
+        if re.search(
+            rf"\b{re.escape(preferred_raw)}\b",
+            raw_job,
+        ):
             return True
 
     return False

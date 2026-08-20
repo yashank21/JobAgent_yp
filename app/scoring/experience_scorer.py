@@ -20,32 +20,51 @@ def calculate_experience_score(
     Returns a score between 0 and 100.
 
     Rules:
-    - No experience requirement -> 100
+    - No experience requirement -> 70
     - Candidate meets requirement -> 100
     - Candidate has less experience -> proportional score
-    - No candidate experience -> 0
+    - Invalid/non-positive requirement -> 100
     """
 
     required_years = parse_experience_years(
         job.experience_required
     )
 
-    # Job does not specify an experience requirement.
-    if required_years is None:
-        return 100.0
+    # --------------------------------------------------------
+    # No explicit experience requirement
+    # --------------------------------------------------------
 
-    # Defensive handling for invalid requirements.
+    if required_years is None:
+        return 70.0
+
+    # --------------------------------------------------------
+    # Defensive handling
+    # --------------------------------------------------------
+
     if required_years <= 0:
         return 100.0
+
+    # --------------------------------------------------------
+    # Candidate experience
+    # --------------------------------------------------------
 
     candidate_years = max(
         candidate.experience_years,
         0.0,
     )
 
+    # --------------------------------------------------------
+    # Candidate meets requirement
+    # --------------------------------------------------------
+
     if candidate_years >= required_years:
         return 100.0
 
-    return (
-        candidate_years / required_years
-    ) * 100
+    # --------------------------------------------------------
+    # Candidate has less experience
+    # --------------------------------------------------------
+
+    return round(
+        (candidate_years / required_years) * 100.0,
+        2,
+    )

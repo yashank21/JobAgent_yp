@@ -36,13 +36,17 @@ CANDIDATE_PROFILE = CandidateProfile(
     # Target Roles
     # -----------------------------------------
     preferred_roles=[
-        "AI Engineer",
-        "ML Engineer",
-        "Machine Learning Engineer",
+    "AI Engineer",
+    "ML Engineer",
+    "Machine Learning Engineer",
+    "LLM Engineer",
+    "Applied Scientist",
+    "Research Engineer",
+],
+
+    secondary_roles=[
         "Software Engineer",
         "Backend Engineer",
-        "Applied Scientist",
-        "Research Engineer",
     ],
 
     # -----------------------------------------

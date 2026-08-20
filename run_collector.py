@@ -1,5 +1,9 @@
 from collections import Counter
 from datetime import datetime, timezone
+import sys
+
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from app.collectors.company_registry import GREENHOUSE_COMPANIES
 from app.collectors.multi_greenhouse import MultiGreenhouseCollector
@@ -14,6 +18,9 @@ from app.services.job_filter import filter_recent_jobs
 
 LOOKBACK_HOURS = 48
 TOP_JOBS = 10
+
+# Set True only when you want every rejected job printed.
+VERBOSE_REJECTIONS = False
 
 
 def classify_reason(reason: str) -> str:
@@ -115,16 +122,22 @@ def print_newest_jobs(
         print(f"Posted: {job.posted_at}")
         print(f"Age: {age}")
         print(f"Location: {job.location}")
-        print(f"URL: {job.application_url or getattr(job, 'source_url', '')}")
+        print(
+            f"URL: "
+            f"{job.application_url or getattr(job, 'source_url', '')}"
+        )
 
 
 def print_eligibility_diagnostics(
     candidate,
     jobs,
+    verbose=True,
 ):
     """
-    Print a diagnostic summary showing why recent
-    jobs were accepted or rejected.
+    Print compact eligibility diagnostics.
+
+    By default this prints only aggregate statistics.
+    Set verbose=True to print every rejected job.
     """
 
     print()
@@ -149,11 +162,17 @@ def print_eligibility_diagnostics(
             job,
         )
 
+        is_eligible = getattr(
+            result,
+            "eligible",
+            getattr(result, "is_eligible", False),
+        )
+
         job_results.append(
             (job, result)
         )
 
-        if getattr(result, "eligible", getattr(result, "is_eligible", False)):
+        if is_eligible:
             eligible_jobs.append(job)
 
         else:
@@ -162,19 +181,23 @@ def print_eligibility_diagnostics(
                     classify_reason(reason)
                 ] += 1
 
+    rejected_jobs = len(jobs) - len(eligible_jobs)
+
+    # -----------------------------------------
+    # Summary
+    # -----------------------------------------
+
     print()
     print(
-        f"Recent jobs evaluated: {len(jobs)}"
+        f"Recent jobs evaluated: {len(jobs):,}"
     )
 
     print(
-        f"Eligible jobs:         "
-        f"{len(eligible_jobs)}"
+        f"Eligible jobs:         {len(eligible_jobs):,}"
     )
 
     print(
-        f"Rejected jobs:         "
-        f"{len(jobs) - len(eligible_jobs)}"
+        f"Rejected jobs:         {rejected_jobs:,}"
     )
 
     # -----------------------------------------
@@ -190,51 +213,64 @@ def print_eligibility_diagnostics(
 
     else:
         for reason, count in reason_counts.most_common():
+            percentage = (
+                count / len(jobs) * 100
+            )
+
             print(
-                f"  {count:>3}x  {reason}"
+                f"  {count:>5,}x  "
+                f"{reason:<40} "
+                f"({percentage:5.1f}%)"
             )
 
     # -----------------------------------------
-    # Job-level results
+    # Optional detailed output
     # -----------------------------------------
 
-    print()
-    print("JOB-LEVEL RESULTS")
-    print("-" * 80)
-
-    for job, result in job_results:
-
-        is_elig = getattr(result, "eligible", getattr(result, "is_eligible", False))
-        status = (
-            "ELIGIBLE"
-            if is_elig
-            else "REJECTED"
-        )
+    if verbose:
 
         print()
-        print(
-            f"[{status}] {job.title}"
-        )
+        print("JOB-LEVEL RESULTS")
+        print("-" * 80)
 
-        print(
-            f"  Company:  {job.company}"
-        )
+        for job, result in job_results:
 
-        print(
-            f"  Location: {job.location}"
-        )
-
-        if result.reasons:
-
-            for reason in result.reasons:
-                print(
-                    f"  ✗ {reason}"
-                )
-
-        else:
-            print(
-                "  ✓ Passed all hard eligibility checks"
+            is_eligible = getattr(
+                result,
+                "eligible",
+                getattr(result, "is_eligible", False),
             )
+
+            status = (
+                "ELIGIBLE"
+                if is_eligible
+                else "REJECTED"
+            )
+
+            print()
+            print(
+                f"[{status}] {job.title}"
+            )
+
+            print(
+                f"  Company:  {job.company}"
+            )
+
+            print(
+                f"  Location: {job.location}"
+            )
+
+            if result.reasons:
+
+                for reason in result.reasons:
+                    print(
+                        f"  [REJECTED] {reason}"
+                    )
+
+            else:
+                print(
+                    "  [PASSED] Passed all hard eligibility checks"
+                )
 
     print()
     print("-" * 80)
@@ -265,6 +301,7 @@ def print_ranked_jobs(
         ranked_jobs,
         start=1,
     ):
+
         job = match.job
 
         print()
@@ -338,12 +375,37 @@ def print_ranked_jobs(
         print("-" * 80)
 
 
+def print_location_summary(jobs):
+    """
+    Print location distribution for recent jobs.
+
+    Useful for debugging location filtering.
+    """
+
+    if not jobs:
+        return
+
+    print()
+    print("LOCATION DISTRIBUTION")
+    print("-" * 80)
+
+    location_counts = Counter(
+        job.location
+        for job in jobs
+    )
+
+    for location, count in location_counts.most_common(30):
+        print(
+            f"{str(location):<50} -> {count}"
+        )
+
+
 def main():
 
     client = HTTPClient()
 
     # -----------------------------------------
-    # Multi-company Greenhouse collector
+    # Collectors
     # -----------------------------------------
 
     greenhouse_collector = MultiGreenhouseCollector(
@@ -351,41 +413,53 @@ def main():
         http_client=client,
     )
 
-    # -----------------------------------------
-    # Wellfound collector
-    # -----------------------------------------
-
     wellfound_collector = WellfoundCollector(
         http_client=client,
     )
 
     # -----------------------------------------
-    # Single source-of-truth candidate profile
+    # Candidate profile
     # -----------------------------------------
 
     candidate = CANDIDATE_PROFILE
 
+    # -----------------------------------------
+    # Collect jobs
+    # -----------------------------------------
+
     print(
         "Collecting jobs from Greenhouse..."
     )
-    greenhouse_jobs = greenhouse_collector.collect()
+
+    greenhouse_jobs = (
+        greenhouse_collector.collect()
+    )
 
     print(
         "Collecting jobs from Wellfound..."
     )
-    wellfound_jobs = wellfound_collector.collect()
+
+    wellfound_jobs = (
+        wellfound_collector.collect()
+    )
 
     # Combine both datasets
-    jobs = greenhouse_jobs + wellfound_jobs
+    jobs = (
+        greenhouse_jobs
+        + wellfound_jobs
+    )
+
+    print()
+    print(
+        f"Greenhouse jobs collected: {len(greenhouse_jobs):,}"
+    )
 
     print(
-        f"Greenhouse jobs collected: {len(greenhouse_jobs)}"
+        f"Wellfound jobs collected:  {len(wellfound_jobs):,}"
     )
+
     print(
-        f"Wellfound jobs collected:  {len(wellfound_jobs)}"
-    )
-    print(
-        f"Total jobs collected:     {len(jobs)}"
+        f"Total jobs collected:      {len(jobs):,}"
     )
 
     print(
@@ -403,6 +477,10 @@ def main():
     )
 
     # -----------------------------------------
+    # Filter recent jobs
+    # -----------------------------------------
+
+        # -----------------------------------------
     # Recent jobs
     # -----------------------------------------
 
@@ -413,21 +491,52 @@ def main():
 
     print()
     print("=" * 80)
-    print(
-        f"Jobs posted in the last "
-        f"{LOOKBACK_HOURS} hours: "
-        f"{len(recent_jobs)}"
-    )
+    print("RECENT JOB FILTER")
     print("=" * 80)
 
-    # 1. Print diagnostics
+    print(
+        f"Lookback window: {LOOKBACK_HOURS} hours"
+    )
+
+    print(
+        f"Jobs before filtering: {len(jobs):,}"
+    )
+
+    print(
+        f"Jobs in recent window: {len(recent_jobs):,}"
+    )
+
+    # -----------------------------------------
+    # Location distribution
+    # -----------------------------------------
+
+    print()
+    print("LOCATION DISTRIBUTION")
+    print("-" * 80)
+
+    location_counts = Counter(
+        job.location
+        for job in recent_jobs
+    )
+
+    for location, count in location_counts.most_common(30):
+        print(
+            f"{str(location):<50} -> {count}"
+        )
+
+    # -----------------------------------------
+    # Eligibility diagnostics
+    # -----------------------------------------
+
     print_eligibility_diagnostics(
         candidate,
         recent_jobs,
     )
 
-    # 2. Rank recent jobs.
-    # rank_jobs() performs hard eligibility filtering internally.
+    # -----------------------------------------
+    # Rank recent jobs
+    # -----------------------------------------
+
     ranked_jobs = rank_jobs(
         candidate,
         recent_jobs,

@@ -1,14 +1,19 @@
 """
 Final job ranking utilities.
 
-V2 ranking is intentionally not a simple weighted average.
+V3 ranking is designed to prioritize genuine job fit rather than
+allowing generic keyword overlap to dominate the ranking.
 
-A job must first pass hard eligibility checks. Among eligible jobs,
-role alignment, required-skill alignment, experience, and location
-determine the ranking.
+Ranking considers:
 
-Score caps prevent strong keyword overlap from hiding major
-role/seniority mismatches.
+- Required/preferred skill alignment
+- Role alignment
+- Experience alignment
+- Location compatibility
+
+Strong mismatches receive additional penalties so that a job with
+very poor skill or experience alignment cannot rank highly merely
+because its title or location looks attractive.
 """
 
 from app.models.candidate import CandidateProfile
@@ -19,11 +24,12 @@ from app.eligibility.eligibility import check_eligibility
 from app.scoring.job_scorer import calculate_skill_score
 from app.scoring.role_scorer import calculate_role_score
 from app.scoring.experience_scorer import calculate_experience_score
+from app.filters.freshness import is_recent_job
 
 
-# ------------------------------------------------------------
-# V2 weights
-# ------------------------------------------------------------
+# ============================================================
+# V3 WEIGHTS
+# ============================================================
 
 ROLE_WEIGHT = 0.30
 SKILL_WEIGHT = 0.40
@@ -31,10 +37,9 @@ EXPERIENCE_WEIGHT = 0.20
 LOCATION_WEIGHT = 0.10
 
 
-
-# ------------------------------------------------------------
-# Location
-# ------------------------------------------------------------
+# ============================================================
+# LOCATION
+# ============================================================
 
 def calculate_location_score(
     candidate: CandidateProfile,
@@ -44,17 +49,40 @@ def calculate_location_score(
     Calculate location compatibility from 0 to 100.
 
     For an India-focused candidate:
-    - India locations -> 100
-    - Explicit India remote -> 100
-    - Generic remote -> 0 because country is unknown
-    - US/UK/etc. remote -> 0
+
+    Explicit Indian location
+        -> 100
+
+    Explicit India remote
+        -> 100
+
+    Explicit foreign location
+        -> 0
+
+    Explicit foreign remote
+        -> 0
+
+    Generic remote with unknown country
+        -> 0
+
+    Unknown/non-matching location
+        -> 0
+
+    IMPORTANT:
+    Generic remote must NOT automatically receive 100 because
+    remote does not mean remote from India.
     """
 
     if not candidate.preferred_locations:
         return 100.0
 
-    job_location = (job.location or "").lower().strip()
-    remote_type = (job.remote_type or "").lower().strip()
+    job_location = (
+        job.location or ""
+    ).lower().strip()
+
+    remote_type = (
+        job.remote_type or ""
+    ).lower().strip()
 
     # --------------------------------------------------------
     # Explicit Indian locations
@@ -84,36 +112,38 @@ def calculate_location_score(
     ):
         return 100.0
 
-        # --------------------------------------------------------
-    # Explicit foreign remote locations
+    # --------------------------------------------------------
+    # Explicit foreign locations
     # --------------------------------------------------------
 
-    foreign_remote_locations = [
-        "remote - us",
-        "remote - usa",
-        "remote - united states",
-        "remote, us",
-        "remote, usa",
-        "remote, united states",
-        "remote - uk",
-        "remote, uk",
-        "remote - united kingdom",
-        "remote, united kingdom",
-        "remote - canada",
-        "remote, canada",
-        "remote - australia",
-        "remote, australia",
-        "remote - germany",
-        "remote, germany",
-        "remote - france",
-        "remote, france",
-        "remote - poland",
-        "remote, poland",
+    foreign_locations = [
+        "united states",
+        "united kingdom",
+        "canada",
+        "australia",
+        "germany",
+        "france",
+        "poland",
+        "colombia",
+        "brazil",
+        "mexico",
+        "singapore",
+        "ireland",
+        "netherlands",
+        "spain",
+        "italy",
+        "switzerland",
+        "japan",
+        "china",
+        "south korea",
+        "israel",
+        "uae",
+        "dubai",
     ]
 
     if any(
-        foreign in job_location
-        for foreign in foreign_remote_locations
+        country in job_location
+        for country in foreign_locations
     ):
         return 0.0
 
@@ -123,6 +153,7 @@ def calculate_location_score(
 
     if (
         "remote - india" in job_location
+        or "remote, india" in job_location
         or "remote india" in job_location
         or "india remote" in job_location
         or "india" in remote_type
@@ -132,19 +163,27 @@ def calculate_location_score(
     # --------------------------------------------------------
     # Generic remote
     #
-    # Country is unknown, so keep it eligible for now.
+    # We do NOT know where the employee can work.
+    #
+    # Therefore this cannot be treated as a location match.
     # --------------------------------------------------------
 
     if (
         "remote" in job_location
         or "remote" in remote_type
     ):
-        return 100.0
-    
+        return 0.0
+
+    # --------------------------------------------------------
+    # Unknown / unmatched location
+    # --------------------------------------------------------
+
     return 0.0
-# ------------------------------------------------------------
-# Final score
-# ------------------------------------------------------------
+
+
+# ============================================================
+# FINAL SCORE
+# ============================================================
 
 def calculate_final_score(
     skill_score: float,
@@ -153,12 +192,31 @@ def calculate_final_score(
     location_score: float,
 ) -> float:
     """
-    Calculate the raw V2 score and apply mismatch caps.
+    Calculate final job compatibility score.
 
-    Caps are essential: otherwise a job with excellent keyword
-    overlap can outrank a job that actually matches the candidate's
-    target career.
+    The weighted score is followed by targeted penalties.
+
+    The goal is:
+
+        Strong skills + strong role
+            -> high score
+
+        Strong role + weak skills
+            -> moderate score
+
+        Strong role + zero skills
+            -> low score
+
+        Strong role + severe experience mismatch
+            -> heavily reduced score
+
+        Wrong role
+            -> very low score
     """
+
+    # --------------------------------------------------------
+    # Base weighted score
+    # --------------------------------------------------------
 
     raw_score = (
         skill_score * SKILL_WEIGHT
@@ -168,40 +226,156 @@ def calculate_final_score(
     )
 
     # --------------------------------------------------------
-    # Role caps
+    # ROLE PENALTIES
     # --------------------------------------------------------
 
-    if role_score < 40:
-        raw_score = min(raw_score, 50.0)
+    if role_score == 0:
+        raw_score = min(
+            raw_score,
+            20.0,
+        )
+
+    elif role_score < 40:
+        raw_score = min(
+            raw_score,
+            35.0,
+        )
 
     elif role_score < 60:
-        raw_score = min(raw_score, 65.0)
+        raw_score = min(
+            raw_score,
+            50.0,
+        )
 
     elif role_score < 75:
-        raw_score = min(raw_score, 78.0)
+        raw_score = min(
+            raw_score,
+            65.0,
+        )
 
     # --------------------------------------------------------
-    # Experience caps
+    # SKILL PENALTIES
+    # --------------------------------------------------------
+    #
+    # This is the major fix.
+    #
+    # A job with zero skill overlap should NOT be able to
+    # reach 45% merely because role/location are good.
     # --------------------------------------------------------
 
-    if experience_score < 20:
-        raw_score = min(raw_score, 50.0)
+    if skill_score == 0:
+
+        raw_score = min(
+            raw_score,
+            30.0,
+        )
+
+    elif skill_score < 10:
+
+        raw_score = min(
+            raw_score,
+            35.0,
+        )
+
+    elif skill_score < 20:
+
+        raw_score = min(
+            raw_score,
+            42.0,
+        )
+
+    elif skill_score < 40:
+
+        raw_score = min(
+            raw_score,
+            55.0,
+        )
+
+    # --------------------------------------------------------
+    # EXPERIENCE PENALTIES
+    # --------------------------------------------------------
+
+    if experience_score < 10:
+
+        raw_score = min(
+            raw_score,
+            35.0,
+        )
+
+    elif experience_score < 20:
+
+        raw_score = min(
+            raw_score,
+            45.0,
+        )
 
     elif experience_score < 40:
-        raw_score = min(raw_score, 60.0)
+
+        raw_score = min(
+            raw_score,
+            55.0,
+        )
 
     elif experience_score < 60:
-        raw_score = min(raw_score, 72.0)
+
+        raw_score = min(
+            raw_score,
+            68.0,
+        )
+
+    # --------------------------------------------------------
+    # COMBINED BAD-FIT PENALTIES
+    # --------------------------------------------------------
+    #
+    # These prevent a job from surviving through one strong
+    # dimension when two major dimensions are terrible.
+    # --------------------------------------------------------
+
+    # Very weak skills + weak experience
+    if (
+        skill_score < 20
+        and experience_score < 40
+    ):
+        raw_score = min(
+            raw_score,
+            35.0,
+        )
+
+    # Zero skills + weak role
+    if (
+        skill_score == 0
+        and role_score < 60
+    ):
+        raw_score = min(
+            raw_score,
+            25.0,
+        )
+
+    # Zero skills + severe experience mismatch
+    if (
+        skill_score == 0
+        and experience_score < 20
+    ):
+        raw_score = min(
+            raw_score,
+            25.0,
+        )
 
     return round(
-        max(0.0, min(100.0, raw_score)),
+        max(
+            0.0,
+            min(
+                100.0,
+                raw_score,
+            ),
+        ),
         2,
     )
 
 
-# ------------------------------------------------------------
-# Individual job
-# ------------------------------------------------------------
+# ============================================================
+# INDIVIDUAL JOB
+# ============================================================
 
 def score_job(
     candidate: CandidateProfile,
@@ -246,37 +420,78 @@ def score_job(
     return JobMatch(
         job=job,
         eligible=eligibility.eligible,
-        skill_score=round(skill_score, 2),
-        role_score=round(role_score, 2),
-        experience_score=round(experience_score, 2),
-        location_score=round(location_score, 2),
+        skill_score=round(
+            skill_score,
+            2,
+        ),
+        role_score=round(
+            role_score,
+            2,
+        ),
+        experience_score=round(
+            experience_score,
+            2,
+        ),
+        location_score=round(
+            location_score,
+            2,
+        ),
         final_score=final_score,
         eligibility_reasons=eligibility.reasons,
     )
 
 
-# ------------------------------------------------------------
-# Ranking
-# ------------------------------------------------------------
+# ============================================================
+# RANKING
+# ============================================================
 
 def rank_jobs(
     candidate: CandidateProfile,
     jobs: list[Job],
 ) -> list[JobMatch]:
     """
-    Score all jobs and return eligible jobs from highest to lowest.
+    Score jobs posted within the last 48 hours
+    and return eligible jobs from highest to lowest.
     """
 
-    matches = [
-        score_job(candidate, job)
+    # --------------------------------------------------------
+    # 1. Freshness filter
+    # --------------------------------------------------------
+
+    recent_jobs = [
+        job
         for job in jobs
+        if is_recent_job(
+            job,
+            hours=48,
+        )
     ]
+
+    # --------------------------------------------------------
+    # 2. Score recent jobs
+    # --------------------------------------------------------
+
+    matches = [
+        score_job(
+            candidate,
+            job,
+        )
+        for job in recent_jobs
+    ]
+
+    # --------------------------------------------------------
+    # 3. Keep only eligible jobs
+    # --------------------------------------------------------
 
     eligible_matches = [
         match
         for match in matches
         if match.eligible
     ]
+
+    # --------------------------------------------------------
+    # 4. Rank
+    # --------------------------------------------------------
 
     return sorted(
         eligible_matches,

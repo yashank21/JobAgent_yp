@@ -279,7 +279,7 @@ def test_machine_learning_scientist():
     ) == RoleFamily.DATA_SCIENCE
 
 
-def test_research_engineer_is_not_unknown():
+def test_research_engineer_is_research_engineering():
     assert classify_role(
         "Research Engineer"
-    ) == RoleFamily.UNKNOWN
+    ) == RoleFamily.RESEARCH_ENGINEERING
