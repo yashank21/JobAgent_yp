@@ -249,6 +249,10 @@ class WellfoundCollector:
     # ---------------------------------------------------------
     # Company extraction
     # ---------------------------------------------------------
+    
+        # ---------------------------------------------------------
+    # Company extraction
+    # ---------------------------------------------------------
 
     async def _extract_company(
         self,
@@ -256,18 +260,29 @@ class WellfoundCollector:
         job_text: str,
     ) -> str:
 
-        # Walk upward looking for a nearby company link.
         result = await link.evaluate(
             """
             el => {
+
                 let node = el;
 
-                for (let i = 0; i < 8 && node; i++) {
-                    const companyLinks =
-                        node.querySelectorAll("a[href*='/company/']");
+                for (let i = 0; i < 10 && node; i++) {
 
-                    if (companyLinks.length > 0) {
-                        return companyLinks[0].innerText.trim();
+                    const startupHeader =
+                        node.querySelector(
+                            "[data-testid='startup-header']"
+                        );
+
+                    if (startupHeader) {
+
+                        const companyName =
+                            startupHeader.querySelector("h2");
+
+                        if (companyName) {
+                            return (
+                                companyName.textContent || ""
+                            ).trim();
+                        }
                     }
 
                     node = node.parentElement;
@@ -304,37 +319,39 @@ class WellfoundCollector:
         # -----------------------------------------------------
 
         card_text = await link.evaluate(
-            """
-            el => {
-                let node = el;
+    """
+    el => {
+        let node = el;
 
-                for (let i = 0; i < 8 && node; i++) {
-                    const text = (node.innerText || "").trim();
+        for (let i = 0; i < 8 && node; i++) {
+            const text = (node.innerText || "").trim();
 
-                    if (
-                        text.length >= 50 &&
-                        text.length <= 1200 &&
-                        (
-                            text.includes("Full-time") ||
-                            text.includes("Part-time") ||
-                            text.includes("years of exp") ||
-                            text.includes("months of exp") ||
-                            text.includes("Remote") ||
-                            text.includes("In office") ||
-                            text.includes("₹") ||
-                            text.includes("$")
-                        )
-                    ) {
-                        return text;
-                    }
-
-                    node = node.parentElement;
-                }
-
-                return "";
+            // A real individual job section should contain:
+            // the job title + employment type + location.
+            if (
+                text.length >= 30 &&
+                text.length <= 500 &&
+                (
+                    text.includes("Full-time") ||
+                    text.includes("Part-time")
+                ) &&
+                (
+                    text.includes("In office") ||
+                    text.includes("Remote") ||
+                    text.includes("Onsite") ||
+                    text.includes("On-site")
+                )
+            ) {
+                return text;
             }
-            """
-        )
+
+            node = node.parentElement;
+        }
+
+        return "";
+    }
+    """
+)
 
         card_text = self._clean_text(card_text)
 
@@ -447,9 +464,8 @@ class WellfoundCollector:
                 jobs.append(job)
 
             except Exception as exc:
-                logger.debug(
-                    "Failed to parse Wellfound job: %s",
-                    exc,
+                print(
+                    f"FAILED TO PARSE JOB LINK: {exc!r}"
                 )
 
         return jobs
