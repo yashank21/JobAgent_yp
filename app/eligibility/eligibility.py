@@ -173,6 +173,20 @@ NON_ENGINEERING_TITLE_PATTERNS = [
     r"\bcustomer support\b",
     r"\btechnical support\b",
     r"\bsupport specialist\b",
+    
+    r"\baccountant\b",
+    r"\bfinancial analyst\b",
+    r"\bfinance\b",
+    r"\bhuman resources\b",
+    r"\brecruiter\b",
+    r"\brecruiting\b",
+    r"\blegal counsel\b",
+    r"\battorney\b",
+    r"\bmarketing\b",
+    r"\bcommunications\b",
+    r"\bprocurement\b",
+    r"\bsourcing\b",
+    r"\boperations\b",
 ]
 
 
@@ -228,6 +242,7 @@ def is_location_eligible(
 
     if isinstance(job, str):
         job_location = job
+        remote_type = ""
     else:
         job_location = getattr(
             job,
@@ -235,9 +250,16 @@ def is_location_eligible(
             "",
         )
 
+        remote_type = getattr(
+            job,
+            "remote_type",
+            "",
+        )
+
     return location_matches(
         job_location,
         preferred_locations,
+        remote_type,
     )
 
 
@@ -358,7 +380,9 @@ def is_role_eligible(
     # --------------------------------------------------------
 
     if job_family == RoleFamily.UNKNOWN:
-        return False
+    # Unknown roles are not automatically rejected.
+    # The scoring layer will assign a low/uncertain role score.
+        return True
 
     # --------------------------------------------------------
     # Check PRIMARY roles first.

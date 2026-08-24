@@ -222,6 +222,7 @@ def normalize_location(location: str) -> str:
 def location_matches(
     job_location: str,
     preferred_locations: list[str],
+    remote_type: str = "",
 ) -> bool:
     """
     Determine whether a job location matches candidate preferences.
@@ -259,19 +260,28 @@ def location_matches(
     if not preferred_locations:
         return True
 
+    raw_job = _clean(
+        job_location
+    )
+
     normalized_job = normalize_location(
         job_location
     )
 
-    raw_job = _clean(
-        job_location
+    remote_type_raw = _clean(
+        remote_type
+    )
+
+    is_remote_job = (
+        normalized_job == "Remote"
+        or "remote" in remote_type_raw
     )
 
     # --------------------------------------------------------
     # Remote jobs
     # --------------------------------------------------------
 
-    if normalized_job == "Remote":
+    if is_remote_job:
 
         # Explicit India remote
         if _contains_india(raw_job):
@@ -332,7 +342,7 @@ def location_matches(
 
         if preferred_raw in {
             "india",
-            "india only",
+
         }:
 
             if _contains_india(raw_job):

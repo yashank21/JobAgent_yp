@@ -66,6 +66,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.DEVOPS_ML_PLATFORM: 70.0,
         RoleFamily.DATA_ENGINEERING: 60.0,
         RoleFamily.BACKEND_ENGINEERING: 55.0,
+        RoleFamily.DEVOPS: 55.0,
         RoleFamily.SOFTWARE_ENGINEERING: 45.0,
     },
 
@@ -83,6 +84,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.DEVOPS_ML_PLATFORM: 75.0,
         RoleFamily.DATA_ENGINEERING: 65.0,
         RoleFamily.BACKEND_ENGINEERING: 55.0,
+        RoleFamily.DEVOPS: 55.0,
         RoleFamily.SOFTWARE_ENGINEERING: 45.0,
     },
 
@@ -101,6 +103,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.BACKEND_ENGINEERING: 60.0,
         RoleFamily.DATA_ENGINEERING: 60.0,
         RoleFamily.SOFTWARE_ENGINEERING: 50.0,
+        RoleFamily.DEVOPS: 50.0,
     },
 
     # ============================================================== 
@@ -118,6 +121,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.DATA_ENGINEERING: 55.0,
         RoleFamily.BACKEND_ENGINEERING: 50.0,
         RoleFamily.SOFTWARE_ENGINEERING: 45.0,
+        RoleFamily.DEVOPS: 45.0,
     },
 
     # ============================================================== 
@@ -160,6 +164,7 @@ ROLE_COMPATIBILITY = {
 
     RoleFamily.DEVOPS_ML_PLATFORM: {
         RoleFamily.DEVOPS_ML_PLATFORM: 100.0,
+        RoleFamily.DEVOPS: 90.0,
         RoleFamily.MACHINE_LEARNING: 80.0,
         RoleFamily.AI_ENGINEERING: 75.0,
         RoleFamily.LLM_GENAI: 70.0,
@@ -167,6 +172,20 @@ ROLE_COMPATIBILITY = {
         RoleFamily.FORWARD_DEPLOYED: 65.0,
         RoleFamily.BACKEND_ENGINEERING: 65.0,
         RoleFamily.SOFTWARE_ENGINEERING: 55.0,
+    },
+    
+    RoleFamily.DEVOPS: {
+        RoleFamily.DEVOPS: 100.0,
+        RoleFamily.DEVOPS_ML_PLATFORM: 90.0,
+        RoleFamily.BACKEND_ENGINEERING: 75.0,
+        RoleFamily.DATA_ENGINEERING: 75.0,
+        RoleFamily.SOFTWARE_ENGINEERING: 65.0,
+        RoleFamily.MACHINE_LEARNING: 55.0,
+        RoleFamily.AI_ENGINEERING: 50.0,
+        RoleFamily.LLM_GENAI: 50.0,
+        RoleFamily.DATA_SCIENCE: 45.0,
+        RoleFamily.RESEARCH_ENGINEERING: 45.0,
+        RoleFamily.FORWARD_DEPLOYED: 65.0,
     },
 
     # ============================================================== 
@@ -178,6 +197,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.DATA_SCIENCE: 85.0,
         RoleFamily.MACHINE_LEARNING: 75.0,
         RoleFamily.AI_ENGINEERING: 70.0,
+        RoleFamily.DEVOPS: 75.0,
         RoleFamily.DEVOPS_ML_PLATFORM: 70.0,
         RoleFamily.LLM_GENAI: 65.0,
         RoleFamily.FORWARD_DEPLOYED: 60.0,
@@ -192,6 +212,7 @@ ROLE_COMPATIBILITY = {
     RoleFamily.BACKEND_ENGINEERING: {
         RoleFamily.BACKEND_ENGINEERING: 100.0,
         RoleFamily.SOFTWARE_ENGINEERING: 90.0,
+        RoleFamily.DEVOPS: 70.0,
         RoleFamily.FORWARD_DEPLOYED: 70.0,
         RoleFamily.DEVOPS_ML_PLATFORM: 65.0,
         RoleFamily.DATA_ENGINEERING: 60.0,
@@ -210,6 +231,7 @@ ROLE_COMPATIBILITY = {
         RoleFamily.BACKEND_ENGINEERING: 90.0,
         RoleFamily.FORWARD_DEPLOYED: 65.0,
         RoleFamily.DEVOPS_ML_PLATFORM: 60.0,
+        RoleFamily.DEVOPS: 60.0,
         RoleFamily.DATA_ENGINEERING: 55.0,
         RoleFamily.AI_ENGINEERING: 45.0,
         RoleFamily.MACHINE_LEARNING: 45.0,
@@ -344,6 +366,30 @@ EXCLUDED_ROLE_FAMILIES = {
     RoleFamily.FRONTEND_ENGINEERING,
 }
 
+def _resolve_role_family(
+    value: str | RoleFamily,
+) -> RoleFamily:
+    """
+    Resolve either a RoleFamily value or a natural-language
+    role/title into a RoleFamily.
+    """
+
+    if isinstance(value, RoleFamily):
+        return value
+
+    if not value:
+        return RoleFamily.UNKNOWN
+
+    normalized = str(value).strip().lower()
+
+    # Direct canonical RoleFamily value.
+    for family in RoleFamily:
+        if normalized == family.value:
+            return family
+
+    # Otherwise treat it as a natural-language title.
+    return classify_role(str(value))
+
 
 # ------------------------------------------------------------------
 # Main role score
@@ -364,36 +410,82 @@ def calculate_role_score(
     role families.
 
     Secondary roles are fallback matches and are always
-    scored lower than primary roles.
-
-    Returns a score from 0 to 100.
+    scdef calculate_role_score(
+    candidate: CandidateProfile,
+    job: Job,
+) -> float:
     """
-
     if not candidate.preferred_roles:
         return 0.0
 
-    job_family = classify_role(job.title)
-    job_seniority = classify_seniority(job.title)
+    # --------------------------------------------------------
+    # Determine job role family
+    # --------------------------------------------------------
+
+    gemini_role_family = getattr(
+        job,
+        "role_family",
+        "",
+    )
+
+    gemini_confidence = float(
+        getattr(
+            job,
+            "gemini_confidence",
+            0.0,
+        )
+        or 0.0
+    )
+
+    if (
+        gemini_role_family
+        and str(gemini_role_family).lower() != "other"
+        and gemini_confidence >= 0.60
+    ):
+        job_family = _resolve_role_family(
+            gemini_role_family
+        )
+    else:
+        job_family = classify_role(
+            job.title
+        )
+
+    # --------------------------------------------------------
+    # Determine job seniority
+    # --------------------------------------------------------
+
+    gemini_seniority = getattr(
+        job,
+        "seniority",
+        "",
+    )
+
+    if (
+        gemini_seniority
+        and gemini_seniority.lower() != "unknown"
+        and gemini_confidence >= 0.60
+    ):
+        try:
+            job_seniority = classify_seniority(
+                gemini_seniority
+            )
+        except Exception:
+            job_seniority = classify_seniority(
+                job.title
+            )
+    else:
+        job_seniority = classify_seniority(
+            job.title
+        )
 
     if job_family == RoleFamily.UNKNOWN:
         return 0.0
 
     # --------------------------------------------------------
-    # Roles that should NEVER be considered target roles.
+    # Roles that should never be target roles
     # --------------------------------------------------------
 
-    excluded_families = {
-        RoleFamily.MANAGEMENT,
-        RoleFamily.PRODUCT,
-        RoleFamily.SUPPORT_ENGINEERING,
-        RoleFamily.CUSTOMER_ENGINEERING,
-        RoleFamily.INTEGRATION_ENGINEERING,
-        RoleFamily.RPA_ENGINEERING,
-        RoleFamily.MOBILE_ENGINEERING,
-        RoleFamily.FRONTEND_ENGINEERING,
-    }
-
-    if job_family in excluded_families:
+    if job_family in EXCLUDED_ROLE_FAMILIES:
         return 0.0
 
     # --------------------------------------------------------
@@ -406,7 +498,7 @@ def calculate_role_score(
     }
 
     primary_families.discard(RoleFamily.UNKNOWN)
-    primary_families -= excluded_families
+    primary_families -= EXCLUDED_ROLE_FAMILIES
 
     # --------------------------------------------------------
     # Secondary role families
@@ -424,7 +516,7 @@ def calculate_role_score(
     }
 
     secondary_families.discard(RoleFamily.UNKNOWN)
-    secondary_families -= excluded_families
+    secondary_families -= EXCLUDED_ROLE_FAMILIES
 
     # --------------------------------------------------------
     # Seniority
@@ -438,23 +530,6 @@ def calculate_role_score(
     # ========================================================
     # PRIMARY ROLE MATCH
     # ========================================================
-    #
-    # IMPORTANT:
-    #
-    # A primary role must have >= 70 role-family compatibility.
-    #
-    # This prevents things like:
-    #
-    # LLM Engineer -> Backend Engineer = 60
-    #
-    # from being incorrectly treated as a primary match.
-    #
-    # The candidate explicitly listed Backend Engineer as a
-    # secondary role, so the backend job must fall through to
-    # secondary scoring.
-    # ========================================================
-
-    PRIMARY_MATCH_THRESHOLD = 70.0
 
     best_primary_score = 0.0
 
@@ -465,49 +540,34 @@ def calculate_role_score(
             job_family,
         )
 
-        if family_score < PRIMARY_MATCH_THRESHOLD:
+        if family_score <= 0:
             continue
 
-        role_score = (
-            family_score * 0.75
-            + seniority_score * 0.25
-        )
+        role_score = family_score
 
         # ----------------------------------------------------
-        # Seniority mismatch caps
+        # Seniority is NOT blended into normal role similarity.
+        #
+        # A Software Engineer is still a Software Engineer
+        # even if the job is slightly more senior.
         # ----------------------------------------------------
 
         if seniority_score < 20:
-            role_score = min(
-                role_score,
-                45.0,
-            )
+            role_score = min(role_score, 60.0)
 
         elif seniority_score < 40:
-            role_score = min(
-                role_score,
-                60.0,
-            )
+            role_score = min(role_score, 75.0)
 
         elif seniority_score < 60:
-            role_score = min(
-                role_score,
-                80.0,
-            )
+            role_score = min(role_score, 85.0)
 
         best_primary_score = max(
             best_primary_score,
             role_score,
         )
 
-        # ========================================================
-    # SECONDARY ROLE MATCH
     # ========================================================
-    #
-    # Secondary roles are fallback roles.
-    #
-    # Even an exact secondary role should NOT compete with
-    # an exact primary role.
+    # SECONDARY ROLE MATCH
     # ========================================================
 
     best_secondary_score = 0.0
@@ -523,25 +583,20 @@ def calculate_role_score(
             continue
 
         role_score = (
-            family_score * 0.70
-            + seniority_score * 0.30
+            family_score
+            * SECONDARY_ROLE_MULTIPLIER
         )
 
-        # Secondary roles receive a hard reduction.
-        role_score *= 0.70
-
-        # Secondary roles are fallback opportunities.
+        # Secondary roles are intentionally weaker.
         role_score = min(
             role_score,
-            60.0,
+            70.0,
         )
 
-        # Entry-level candidates should not receive
-        # high scores for senior secondary-role jobs.
-        if seniority_score < 60:
+        if seniority_score < 40:
             role_score = min(
                 role_score,
-                50.0,
+                55.0,
             )
 
         best_secondary_score = max(
@@ -549,20 +604,14 @@ def calculate_role_score(
             role_score,
         )
 
-    # ========================================================
-    # PRIMARY ALWAYS WINS
-    # ========================================================
+        # ========================================================
+        # FINAL ROLE SCORE
+        # ========================================================
 
-    if best_primary_score > 0:
         return round(
-            best_primary_score,
+            max(
+                best_primary_score,
+                best_secondary_score,
+            ),
             2,
         )
-
-    if best_secondary_score > 0:
-        return round(
-            best_secondary_score,
-            2,
-        )
-
-    return 0.0

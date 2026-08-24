@@ -7,11 +7,8 @@ Collects and normalizes jobs from a Greenhouse-style API.
 from app.collectors.base import BaseCollector
 from app.models.job import Job
 from app.services.http_client import HTTPClient
-from app.services.text_cleaner import clean_html
 from app.services.date_parser import parse_greenhouse_date
-from app.services.job_parser import extract_section
-from app.services.skill_extractor import extract_skills
-from app.services.experience_parser import parse_experience_years
+from app.services.job_enrichment import enrich_job_description
 
 
 class GreenhouseCollector(BaseCollector):
@@ -63,207 +60,78 @@ class GreenhouseCollector(BaseCollector):
         # Description
         # ----------------------------------------
 
-        description = clean_html(
+        raw_description = (
             raw_job.get("content", "")
         )
 
-        # ----------------------------------------
-        # Section definitions
-        # ----------------------------------------
-
-        required_sections = [
-            "BASIC QUALIFICATIONS",
-            "BASIC QUALIFICATION",
-            "REQUIRED QUALIFICATIONS",
-            "REQUIRED QUALIFICATION",
-            "REQUIRED SKILLS",
-            "REQUIRED SKILLS AND EXPERIENCE",
-            "REQUIRED SKILLS & EXPERIENCE",
-            "REQUIRED EXPERIENCE",
-            "QUALIFICATIONS",
-            "QUALIFICATION",
-            "YOUR EXPERTISE",
-            "YOUR QUALIFICATIONS",
-            "WHAT YOU BRING",
-            "WHAT YOU'LL BRING",
-            "WHAT YOU WILL BRING",
-            "MINIMUM QUALIFICATIONS",
-            "MINIMUM REQUIREMENTS",
-        ]
-
-        preferred_sections = [
-            "PREFERRED SKILLS",
-            "PREFERRED QUALIFICATIONS",
-            "PREFERRED EXPERIENCE",
-            "PREFERRED REQUIREMENTS",
-            "NICE TO HAVE",
-            "NICE-TO-HAVE",
-            "BONUS QUALIFICATIONS",
-            "BONUS SKILLS",
-        ]
-
-        section_boundaries = [
-            *required_sections,
-            *preferred_sections,
-
-            "ADDITIONAL REQUIREMENTS",
-            "ADDITIONAL QUALIFICATIONS",
-            "COMPENSATION AND BENEFITS",
-            "ITAR REQUIREMENTS",
-
-            "WHAT YOU'LL DO",
-            "WHAT YOU WILL DO",
-            "WHAT WE'LL DO",
-            "WHAT WE WILL DO",
-            "RESPONSIBILITIES",
-            "RESPONSIBILITY",
-
-            "ABOUT THE ROLE",
-            "ABOUT YOU",
-            "THE ROLE",
-            "RESPONSIBILITIES AND DUTIES",
-            "DUTIES",
-        ]
-
-        # ----------------------------------------
-        # Extract required section
-        # ----------------------------------------
-
-        required_text = ""
-
-        for section in required_sections:
-            required_text = extract_section(
-                description,
-                section,
-                [
-                    item
-                    for item in section_boundaries
-                    if item != section
-                ],
-            )
-
-            if required_text:
-                break
-
-        # ----------------------------------------
-        # Extract preferred section
-        # ----------------------------------------
-
-        preferred_text = ""
-
-        for section in preferred_sections:
-            preferred_text = extract_section(
-                description,
-                section,
-                [
-                    item
-                    for item in section_boundaries
-                    if item != section
-                ],
-            )
-
-            if preferred_text:
-                break
-
-        # ----------------------------------------
-        # Experience
-        #
-        # Important:
-        # If a dedicated required section exists,
-        # parse experience from that section.
-        #
-        # Otherwise parse the full description.
-        # ----------------------------------------
-
-        experience_text = (
-            required_text
-            if required_text
-            else description
+        title = raw_job.get(
+            "title",
+            "",
         )
 
-        experience_years_required = (
-            parse_experience_years(
-                experience_text
-            )
+        enrichment = enrich_job_description(
+            raw_description,
+            title=title,
         )
-
-        # ----------------------------------------
-        # Skills
-        #
-        # First choice:
-        # extract from explicit required/preferred
-        # sections.
-        #
-        # Fallback:
-        # use the full description when no
-        # structured qualification section exists.
-        # ----------------------------------------
-
-        if required_text:
-            required_skills = extract_skills(
-                required_text
-            )
-        else:
-            required_skills = extract_skills(
-                description
-            )
-
-        if preferred_text:
-            preferred_skills = extract_skills(
-                preferred_text
-            )
-        else:
-            preferred_skills = []
 
         # ----------------------------------------
         # Job object
         # ----------------------------------------
 
         return Job(
-            id=str(raw_job["id"]),
+    id=str(raw_job["id"]),
 
-            title=raw_job.get(
-                "title",
-                "",
-            ),
+    title=raw_job.get(
+        "title",
+        "",
+    ),
 
-            company=raw_job.get(
-                "company_name",
-                self.company,
-            ),
+    company=raw_job.get(
+        "company_name",
+        self.company,
+    ),
 
-            location=location,
+    location=location,
 
-            description=description,
+    description=enrichment.description,
 
-            # Store the text used for experience
-            # parsing so the scorer can use it later.
-            experience_required=experience_text,
+    experience_required=enrichment.experience_required,
 
-            experience_years_required=(
-                experience_years_required
-            ),
+    experience_years_required=(
+        enrichment.experience_years_required
+    ),
 
-            required_skills=required_skills,
+    seniority=enrichment.seniority,
+    role_family=enrichment.role_family,
+    job_type=enrichment.job_type,
 
-            preferred_skills=preferred_skills,
+    required_skills=enrichment.required_skills or [],
 
-            application_url=raw_job.get(
-                "absolute_url",
-                "",
-            ),
+    preferred_skills=enrichment.preferred_skills or [],
 
-            source_url=raw_job.get(
-                "absolute_url",
-                "",
-            ),
+    gemini_confidence=enrichment.gemini_confidence,
 
-            source="greenhouse",
+    description_status=enrichment.description_status,
+    skills_status=enrichment.skills_status,
+    experience_status=enrichment.experience_status,
+    description_length=len(enrichment.description),
 
-            posted_at=parse_greenhouse_date(
-                raw_job.get(
-                    "first_published",
-                    "",
-                )
-            ),
+    application_url=raw_job.get(
+        "absolute_url",
+        "",
+    ),
+
+    source_url=raw_job.get(
+        "absolute_url",
+        "",
+    ),
+
+    source="greenhouse",
+
+    posted_at=parse_greenhouse_date(
+        raw_job.get(
+            "first_published",
+            "",
         )
+    ),
+)

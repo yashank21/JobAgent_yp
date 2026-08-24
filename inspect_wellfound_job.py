@@ -19,7 +19,7 @@ async def main():
             )
         )
 
-        url = "https://wellfound.com/jobs/4544682-ai-engineer"
+        url = "https://wellfound.com/jobs"
 
         await page.goto(
             url,

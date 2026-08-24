@@ -79,11 +79,7 @@ def parse_wellfound_date(
 
     if not value:
         return None
-
-    # ---------------------------------------------------------
-    # Reference time
-    # ---------------------------------------------------------
-
+    
     if reference_time is None:
 
         reference_time = datetime.now(
@@ -226,3 +222,19 @@ def parse_wellfound_date(
         return None
 
     return reference_time - delta
+
+
+def parse_relative_posted_date(
+    value: str,
+    reference_time: datetime | None = None,
+) -> datetime | None:
+    """Parse Workday-style relative text such as ``Posted 4 Days Ago``."""
+    if not value:
+        return None
+    normalized = re.sub(
+        r"^posted\s*",
+        "",
+        value.strip(),
+        flags=re.IGNORECASE,
+    )
+    return parse_wellfound_date(normalized, reference_time)

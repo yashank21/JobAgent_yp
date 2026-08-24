@@ -18,6 +18,7 @@ from app.services.experience_parser import parse_experience_years
 from app.services.skill_extractor import extract_skills
 from app.services.seniority_parser import parse_seniority
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -774,59 +775,245 @@ class WellfoundCollector:
 
         await page.wait_for_timeout(4000)
 
-        links = await page.query_selector_all(
-            "a[href*='/jobs/']"
+        # ---------------------------------------------------------
+        # Discover pagination
+        # ---------------------------------------------------------
+
+        import re
+        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+        page_numbers = set()
+
+        all_links = await page.query_selector_all("a")
+
+        for a in all_links:
+
+            try:
+                text = (await a.inner_text()).strip()
+                href = await a.get_attribute("href")
+
+                if not href:
+                    continue
+
+                # Look for pagination links such as:
+                # /role/l/ai-engineer/india?page=22
+                if text.isdigit() and "?page=" in href:
+
+                    match = re.search(r"[?&]page=(\d+)", href)
+
+                    if match:
+                        page_numbers.add(
+                            int(match.group(1))
+                        )
+
+            except Exception:
+                continue
+
+
+        # ---------------------------------------------------------
+        # Determine maximum page
+        # ---------------------------------------------------------
+
+        max_page = max(
+            page_numbers,
+            default=1,
         )
 
         logger.info(
-            "Found %d Wellfound job links",
-            len(links),
+            "Detected Wellfound pagination: %d pages",
+            max_page,
         )
+
+
+        # ---------------------------------------------------------
+        # Generate EVERY page
+        #
+        # Wellfound may only expose:
+        #
+        # 1 2 3 4 5 ... 20 21 22
+        #
+        # We must generate:
+        #
+        # 1 2 3 4 5 6 ... 20 21 22
+        # ---------------------------------------------------------
+
+        parsed = urlparse(url)
+
+        query = parse_qs(
+            parsed.query,
+            keep_blank_values=True,
+        )
+
+        pagination_urls = []
+
+        for page_number in range(1, max_page + 1):
+
+            page_query = dict(query)
+
+            if page_number == 1:
+
+                # Page 1 should use the clean URL
+                page_query.pop("page", None)
+
+            else:
+
+                page_query["page"] = [
+                    str(page_number)
+                ]
+
+            new_query = urlencode(
+                page_query,
+                doseq=True,
+            )
+
+            page_url = urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    parsed.params,
+                    new_query,
+                    parsed.fragment,
+                )
+            )
+
+            pagination_urls.append(
+                page_url
+            )
+
+
+        # ---------------------------------------------------------
+        # Debug
+        # ---------------------------------------------------------
+
+        logger.info(
+            "Discovered %d Wellfound pagination pages",
+            len(pagination_urls),
+        )
+
+        print("\nWELLFOUND PAGINATION PAGES:")
+
+        for page_url in pagination_urls:
+            print(page_url)
+
+        # ---------------------------------------------------------
+        # Extract jobs from all pages
+        # ---------------------------------------------------------
 
         jobs: List[Dict[str, Any]] = []
 
         seen_ids = set()
-
-        # -----------------------------------------------------
-        # IMPORTANT:
-        #
-        # `page` remains on the search-results page.
-        #
-        # A separate `detail_page` is used for individual
-        # job pages so that the original `link` elements
-        # remain valid.
-        # -----------------------------------------------------
+        seen_job_urls = set()
 
         detail_page = await page.context.new_page()
 
         try:
 
-            for link in links:
+            for page_number, page_url in enumerate(
+                pagination_urls,
+                start=1,
+            ):
 
                 try:
 
-                    job = await self._extract_job_from_link(
-                        detail_page,
-                        link,
-                        reference_time,
+                    logger.info(
+                        "Processing Wellfound page %d/%d: %s",
+                        page_number,
+                        len(pagination_urls),
+                        page_url,
                     )
 
-                    if not job:
-                        continue
+                    print(
+                        f"\nWELLFOUND PAGE {page_number}/{len(pagination_urls)}"
+                    )
 
-                    job_id = job["id"]
+                    # Page 1 is already loaded, so don't reload it.
+                    if page_number > 1:
 
-                    if job_id in seen_ids:
-                        continue
+                        response = await page.goto(
+                            page_url,
+                            wait_until="domcontentloaded",
+                            timeout=30000,
+                        )
 
-                    seen_ids.add(job_id)
+                        if response and response.status != 200:
+                            logger.warning(
+                                "Page %d returned HTTP %s",
+                                page_number,
+                                response.status,
+                            )
+                            continue
 
-                    jobs.append(job)
+                        await page.wait_for_timeout(3000)
+
+                    links = await page.query_selector_all(
+                        "a[href*='/jobs/']"
+                    )
+
+                    print(
+                        f"WELLFOUND JOB LINKS PAGE {page_number}: {len(links)}"
+                    )
+
+                    logger.info(
+                        "Found %d Wellfound job links on page %d",
+                        len(links),
+                        page_number,
+                    )
+
+                    # -------------------------------------------------
+                    # Extract individual jobs
+                    # -------------------------------------------------
+
+                    for link in links:
+
+                        try:
+
+                            href = await link.get_attribute("href")
+
+                            if not href:
+                                continue
+
+                            job_url = (
+                                href
+                                if href.startswith("http")
+                                else f"https://wellfound.com{href}"
+                            )
+
+                            if job_url in seen_job_urls:
+                                continue
+
+                            seen_job_urls.add(job_url)
+
+                            job = await self._extract_job_from_link(
+                                detail_page,
+                                link,
+                                reference_time,
+                            )
+
+                            if not job:
+                                continue
+
+                            job_id = job["id"]
+
+                            if job_id in seen_ids:
+                                continue
+
+                            seen_ids.add(job_id)
+
+                            jobs.append(job)
+
+                        except Exception as exc:
+
+                            logger.warning(
+                                "Failed to parse Wellfound job link: %s",
+                                exc,
+                            )
 
                 except Exception as exc:
 
                     logger.warning(
-                        "Failed to parse Wellfound job link: %s",
+                        "Failed to process Wellfound page %d: %s",
+                        page_number,
                         exc,
                     )
 
@@ -834,13 +1021,13 @@ class WellfoundCollector:
 
             await detail_page.close()
 
-        return jobs
-    
-        # ---------------------------------------------------------
-    # Convert raw job into normalized Job object
-    # ---------------------------------------------------------
+        print(
+            f"\nWELLFOUND TOTAL JOBS: {len(jobs)}"
+        )
 
-        # ---------------------------------------------------------
+        return jobs
+
+    # ---------------------------------------------------------
     # Convert raw job into normalized Job object
     # ---------------------------------------------------------
 
@@ -893,17 +1080,21 @@ class WellfoundCollector:
                 posted_at = posted_at.astimezone(
                     timezone.utc
                 )
-
+                
         # -----------------------------------------------------
         # Clean description
         # -----------------------------------------------------
 
-        description = self._clean_text(
+        raw_description = self._clean_text(
             raw_job.get(
                 "description",
                 "",
             )
         )
+
+        # Gemini enrichment is optional.
+        # Collection must never depend on AI quota availability.
+        description = raw_description
 
         title = self._clean_text(
             raw_job.get(
@@ -940,44 +1131,50 @@ class WellfoundCollector:
             )
         )
 
-        # Extract explicit required skills first.
+        # -----------------------------------------------------
+        # Skills
+        # -----------------------------------------------------
+
+        # Extract only skills explicitly present in the
+        # required-skills section.
+        #
+        # IMPORTANT:
+        # Skills mentioned elsewhere in the description are
+        # NOT automatically treated as required.
+        #
+        # Semantic classification of description-level skills
+        # will be handled later by the Gemini enrichment layer.
+
         required_skills = extract_skills(
             required_skills_text
         )
 
-        # Supplement with skills mentioned in the
-        # complete description.
-        description_skills = extract_skills(
-            description
-        )
-
-        # Preserve order while removing duplicates.
-        required_skills = list(
+        preferred_skills = list(
             dict.fromkeys(
-                required_skills
-                + description_skills
+                extract_skills(
+                    preferred_skills_text
+                )
             )
-        )
-
-        preferred_skills = extract_skills(
-            preferred_skills_text
         )
 
         # -----------------------------------------------------
         # Seniority
         #
-        # IMPORTANT:
-        # parse_seniority() expects:
-        #
-        #     parse_seniority(title, description)
-        #
-        # The parser itself decides whether to use title
-        # seniority or explicit experience.
+        # Experience is parsed deterministically.
+        # Gemini enrichment is not required.
         # -----------------------------------------------------
 
         experience_years = raw_job.get(
             "experience_years_required"
         )
+
+        if experience_years is None:
+            experience_years = parse_experience_years(
+                raw_job.get(
+                    "experience_required",
+                    "",
+                )
+            )
 
         seniority = parse_seniority(
             title,
@@ -1022,9 +1219,7 @@ class WellfoundCollector:
                 "",
             ),
 
-            experience_years_required=raw_job.get(
-                "experience_years_required"
-            ),
+            experience_years_required=experience_years,
 
             seniority=seniority,
 
@@ -1041,6 +1236,11 @@ class WellfoundCollector:
             ),
 
             description=description,
+
+            description_status="raw",
+            skills_status="deterministic",
+            experience_status="deterministic",
+            description_length=len(description),
 
             application_url=raw_job.get(
                 "application_url",

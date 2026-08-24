@@ -1,0 +1,157 @@
+# ==========================================
+# MAANG & BIG TECH ENTERPRISES
+# ==========================================
+google
+microsoft
+amazon
+meta
+apple
+netflix
+uber
+adobe
+microsoft-india
+
+# ==========================================
+# CLOUD, DATA, & DEVOPS GIANTS
+# ==========================================
+postman
+mongodb
+cloudflare
+databricks
+gitlab
+snowflake
+hashicorp
+elastic
+confluent
+pagerduty
+datadog
+newrelic
+splunk
+thoughtspot
+vmware
+redhat
+canonical
+
+# ==========================================
+# FINTECH, PAYMENTS & BANKING GIANTS
+# ==========================================
+stripe
+coinbase
+razorpay
+phonepe
+cred
+groww
+zeta
+mastercard
+visa
+paypal
+intuit
+bloomberg
+goldman-sachs
+jpmorgan
+morganstanley
+barclays
+bnymellon
+societegenerale
+ubs
+fidelity
+schwab
+citadel
+jane-street
+twosigma
+
+# ==========================================
+# SAAS & PRODUCT UNICORNS (GLOBAL & INDIA)
+# ==========================================
+browserstack
+clevertap
+freshworks
+zoho
+atlassian
+salesforce
+servicenow
+workday
+hubspot
+zendesk
+box
+dropbox
+asana
+monday
+jira
+confluence
+notion
+figma
+canva
+miro
+airtable
+zapier
+twilio
+sendgrid
+intercom
+
+# ==========================================
+# E-COMMERCE, QUICK-COMMERCE & LOGISTICS
+# ==========================================
+zepto
+meesho
+swiggy
+zomato
+blinkit
+flipkart
+myntra
+olx
+delhivery
+lenskart
+nykaa
+firstcry
+urbancompany
+shadowfax
+blackbuck
+
+# ==========================================
+# AI, MACHINE LEARNING & HARDWARE
+# ==========================================
+anthropic
+scaleai
+openai
+huggingface
+cohere
+stabilityai
+nvidia
+amd
+qualcomm
+intel
+arm
+mediatek
+cisco
+juniper
+arista
+dell
+hp
+lenovo
+
+# ==========================================
+# TRAVEL, PROPTECH & CONSUMER TECH
+# ==========================================
+airbnb
+booking
+expedia
+agoda
+ola
+rapido
+oyo
+makemytrip
+cleartrip
+housing
+nobroker
+magicbricks
+dream11
+games24x7
+mpl
+cultfit
+pocketfm
+stanzaliving
+upgrad
+unacademy
+byjus
+physicswallah

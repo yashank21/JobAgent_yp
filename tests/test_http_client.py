@@ -202,6 +202,32 @@ def test_http_client_passes_headers(mock_get):
     )
 
 
+@patch("app.services.http_client.requests.post")
+def test_http_client_post_returns_json_and_passes_payload(mock_post):
+    response = Mock()
+    response.status_code = 200
+    response.json.return_value = {"jobPostings": []}
+    mock_post.return_value = response
+
+    client = HTTPClient(retry_delay=0)
+    payload = {"limit": 20, "offset": 0}
+    headers = {"Content-Type": "application/json"}
+
+    result = client.post(
+        "https://example.com/jobs",
+        json=payload,
+        headers=headers,
+    )
+
+    assert result == {"jobPostings": []}
+    mock_post.assert_called_once_with(
+        "https://example.com/jobs",
+        json=payload,
+        headers=headers,
+        timeout=10,
+    )
+
+
 @patch("app.services.http_client.requests.get")
 def test_http_client_passes_query_parameters(mock_get):
 

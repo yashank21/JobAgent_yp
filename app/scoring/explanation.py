@@ -101,11 +101,22 @@ def explain_location_match(
         job.location
     )
 
+    remote_type = getattr(
+        job,
+        "remote_type",
+        "",
+    )
+
+    is_remote_job = (
+        normalized_job == "Remote"
+        or "remote" in remote_type.lower()
+    )
+
     # ------------------------------------------------------------
     # Remote job
     # ------------------------------------------------------------
 
-    if normalized_job == "Remote":
+    if is_remote_job:
 
         for location in candidate.preferred_locations:
 
@@ -132,8 +143,9 @@ def explain_location_match(
     # ------------------------------------------------------------
 
     if location_matches(
-        job.location,
-        candidate.preferred_locations,
+    job.location,
+    candidate.preferred_locations,
+    job.remote_type,
     ):
         return (
             f"✓ Location matches preference: "

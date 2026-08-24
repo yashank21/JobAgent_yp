@@ -57,8 +57,14 @@ def parse_experience_years(text: str) -> float | None:
         # "1-3 years" / "1 to 3 years"
         r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*\d+(?:\.\d+)?\s*years?",
 
+        # Unicode en-dash ranges such as "1–2 years".
+        r"(\d+(?:\.\d+)?)\s*–\s*\d+(?:\.\d+)?\s*years?",
+
         # "2 years of experience"
         r"(\d+(?:\.\d+)?)\s*years?\s+(?:of\s+)?(?:experience|exp)\b",
+
+        # Possessive form: "3 years' experience".
+        r"(\d+(?:\.\d+)?)\s*years?['’]\s*experience\b",
     ]
 
     for pattern in year_patterns:

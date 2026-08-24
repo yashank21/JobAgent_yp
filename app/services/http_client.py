@@ -90,14 +90,51 @@ class HTTPClient:
                 time.sleep(self.retry_delay)
 
         raise last_error
-    
-        def get_text(self, url: str, **kwargs) -> str:
-            """Fetch raw text/HTML content from a URL."""
-            response = self.get(url, **kwargs)
-            return response.text if hasattr(response, "text") else str(response)
-        
-        def get(self, url: str, **kwargs):
-            # Pass extra kwargs (like headers) to requests.get
-            response = requests.get(url, timeout=10, **kwargs)
-            response.raise_for_status()
-            return response
+
+    def post(
+        self,
+        url: str,
+        *,
+        json: object | None = None,
+        headers: dict[str, str] | None = None,
+    ):
+        """Perform a JSON POST request with the same retry policy as GET."""
+        last_error = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.post(
+                    url,
+                    json=json,
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+
+                if response.status_code == 429:
+                    last_error = requests.HTTPError("Rate limited (HTTP 429)")
+                elif response.status_code >= 500:
+                    last_error = requests.HTTPError(
+                        f"Server error (HTTP {response.status_code})"
+                    )
+                else:
+                    response.raise_for_status()
+                    try:
+                        return response.json()
+                    except ValueError:
+                        return response.text
+            except (
+                requests.Timeout,
+                requests.ConnectionError,
+                requests.HTTPError,
+            ) as error:
+                last_error = error
+
+            if attempt < self.max_retries:
+                time.sleep(self.retry_delay)
+
+        raise last_error
+
+    def get_text(self, url: str, **kwargs) -> str:
+        """Fetch raw text/HTML content from a URL."""
+        response = self.get(url, **kwargs)
+        return response.text if hasattr(response, "text") else str(response)

@@ -1,8 +1,44 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
+from threading import Lock
 from datetime import datetime, timezone
 from app.models.job import Job
 from app.services.http_client import HTTPClient
 from app.collectors.greenhouse import GreenhouseCollector
+from app.services.job_enrichment import (
+    description_from_response,
+    enrich_job_description,
+)
+from app.services.date_parser import parse_relative_posted_date
+
+
+def _enriched_fields(
+    description: str | None,
+    retrieval_status: str | None = None,
+    title: str = "",
+    use_gemini: bool = False,
+) -> dict:
+    enrichment = enrich_job_description(
+    description,
+    title=title,
+    retrieval_status=retrieval_status,
+    use_gemini=False,
+    )
+
+    return {
+    "description": enrichment.description,
+    "experience_required": enrichment.experience_required,
+    "experience_years_required": enrichment.experience_years_required,
+    "seniority": enrichment.seniority,
+    "role_family": enrichment.role_family,
+    "required_skills": enrichment.required_skills or [],
+    "preferred_skills": enrichment.preferred_skills or [],
+    "description_status": enrichment.description_status,
+    "skills_status": enrichment.skills_status,
+    "experience_status": enrichment.experience_status,
+    "description_length": len(enrichment.description),
+    "gemini_confidence": enrichment.gemini_confidence,
+    }
 
 class UniversalATSRacer:
     """
@@ -18,10 +54,25 @@ class UniversalATSRacer:
         "netflix": {"tenant": "netflix", "site_name": "netflix", "tier": "wd1"},
     }
 
-    def __init__(self, companies: list[str], http_client: HTTPClient, max_workers: int = 10):
+    def __init__(
+        self,
+        companies: list[str],
+        http_client: HTTPClient,
+        max_workers: int = 10,
+        source: str | None = None,
+    ):
         self.companies = companies
         self.http_client = http_client
         self.max_workers = max_workers
+        self.source = source
+
+        # Diagnostics
+        self.stats = Counter()
+        self.stats_lock = Lock()
+        
+    def _record_stat(self, key: str) -> None:
+        with self.stats_lock:
+            self.stats[key] += 1
 
     def _generate_slugs(self, name: str) -> list[str]:
         cleaned = name.lower().replace(" ", "").replace(".", "").replace("-", "")
@@ -46,6 +97,8 @@ class UniversalATSRacer:
         for slug in slugs:
             # 1. Try Greenhouse
             try:
+                if self.source not in (None, "greenhouse"):
+                    raise LookupError("source disabled")
                 collector = GreenhouseCollector(company=company_name, board_token=slug, http_client=self.http_client)
                 raw_jobs = collector.collect()
                 if raw_jobs:
@@ -57,6 +110,8 @@ class UniversalATSRacer:
 
             # 2. Try Lever
             try:
+                if self.source not in (None, "lever"):
+                    raise LookupError("source disabled")
                 url = f"https://api.lever.co/v0/postings/{slug}?mode=json"
                 response = self.http_client.get(url)
                 data = response if isinstance(response, list) else response.json()
@@ -82,7 +137,10 @@ class UniversalATSRacer:
                                 location=loc_text,
                                 application_url=item.get("hostedUrl"),
                                 posted_at=posted_dt,
-                                description=item.get("descriptionPlain", ""),
+                                **_enriched_fields(
+                                    item.get("descriptionPlain", ""),
+                                    title=item.get("text", ""),
+                                ),
                             )
                         )
                     if jobs:
@@ -92,6 +150,8 @@ class UniversalATSRacer:
 
             # 3. Try Ashby
             try:
+                if self.source not in (None, "ashby"):
+                    raise LookupError("source disabled")
                 url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
                 response = self.http_client.get(url)
                 data_dict = response if isinstance(response, dict) else response.json()
@@ -112,7 +172,10 @@ class UniversalATSRacer:
                                 location=loc_text,
                                 application_url=item.get("jobUrl"),
                                 posted_at=datetime.now(timezone.utc),
-                                description=item.get("descriptionPlain", ""),
+                                **_enriched_fields(
+                                    item.get("descriptionPlain", ""),
+                                    title=item.get("title", ""),
+                                ),
                             )
                         )
                     if jobs:
@@ -121,6 +184,9 @@ class UniversalATSRacer:
                 pass
 
         # 4. Try Workday (Checks manual overrides first, then falls back to generic slug matching)
+        if self.source not in (None, "workday"):
+            return []
+
         workday_targets = []
         if norm_name in self.WORKDAY_OVERRIDES:
             workday_targets.append(self.WORKDAY_OVERRIDES[norm_name])
@@ -162,6 +228,24 @@ class UniversalATSRacer:
                             if not self._is_india_location(loc_text):
                                 continue
 
+                            application_url = f"https://{tenant}.{tier}.myworkdayjobs.com{item.get('externalPath')}"
+                            try:
+                                detail_url = (
+                                    f"https://{tenant}.{tier}.myworkdayjobs.com/"
+                                    f"wday/cxs/{tenant}/{site_name}"
+                                    f"{item.get('externalPath')}"
+                                )
+                                detail_response = self.http_client.get(
+                                    detail_url,
+                                    headers=headers,
+                                )
+                                detail_description = description_from_response(
+                                    detail_response
+                                )
+                                retrieval_status = None
+                            except Exception:
+                                detail_description = ""
+                                retrieval_status = "retrieval_failed"
                             jobs.append(
                                 Job(
                                     id=str(item.get("bulletFields", [item.get("externalPath")])[0]),
@@ -169,9 +253,15 @@ class UniversalATSRacer:
                                     company=company_name,
                                     source="workday",
                                     location=loc_text,
-                                    application_url=f"https://{tenant}.{tier}.myworkdayjobs.com{item.get('externalPath')}",
-                                    posted_at=datetime.now(timezone.utc),
-                                    description="",
+                                    application_url=application_url,
+                                    posted_at=parse_relative_posted_date(
+                                        item.get("postedOn", item.get("posted", ""))
+                                    ),
+                                    **_enriched_fields(
+                                        detail_description,
+                                        title=item.get("title", ""),
+                                        retrieval_status=retrieval_status,
+                                    ),
                                 )
                             )
                         if jobs:
@@ -195,9 +285,28 @@ class UniversalATSRacer:
                 try:
                     jobs = future.result()
                     if jobs:
-                        print(f"  -> Found {len(jobs)} India jobs for {company}")
+                        self._record_stat("companies_with_jobs")
+
+                        print(
+                            f"  -> Found {len(jobs)} India jobs for {company}"
+                        )
+
                         all_jobs.extend(jobs)
+
+                    else:
+                        self._record_stat("companies_no_jobs")
                 except Exception:
                     pass
+
+        print("\n" + "=" * 70)
+        print("ATS COLLECTION SUMMARY")
+        print("=" * 70)
+
+        print(f"Companies scanned : {len(self.companies)}")
+        print(f"Companies with jobs : {self.stats['companies_with_jobs']}")
+        print(f"Companies with no jobs : {self.stats['companies_no_jobs']}")
+        print(f"Total jobs collected : {len(all_jobs)}")
+
+        print("=" * 70)
 
         return all_jobs

@@ -220,3 +220,4 @@ def test_role_score_no_match():
     )
 
     assert score == 0.0
+    

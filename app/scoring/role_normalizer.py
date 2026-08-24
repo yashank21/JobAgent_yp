@@ -443,16 +443,22 @@ SENIORITY_PATTERNS = {
     SeniorityLevel.SENIOR: [
         r"\bsenior\b",
         r"\bsr\b",
-        r"\bsde 2\b",
-        r"\bsde ii\b",
-        r"\blevel 2\b",
-        r"\blevel ii\b",
     ],
 
     SeniorityLevel.MID: [
         r"\bmid level\b",
         r"\bmid-level\b",
         r"\bexperienced\b",
+
+        # Common engineering level conventions
+        r"\bengineer ii\b",
+        r"\bengineer iii\b",
+        r"\bsde ii\b",
+        r"\bsde iii\b",
+        r"\blevel ii\b",
+        r"\blevel iii\b",
+        r"\blevel 2\b",
+        r"\blevel 3\b",
     ],
 
     SeniorityLevel.ENTRY: [
@@ -463,6 +469,10 @@ SENIORITY_PATTERNS = {
         r"\bnew grad\b",
         r"\bnew graduate\b",
         r"\bearly career\b",
+        r"\bengineer i\b",
+        r"\bsde i\b",
+        r"\blevel i\b",
+        r"\blevel 1\b",
     ],
 }
 
@@ -548,7 +558,7 @@ def classify_seniority(title: str) -> SeniorityLevel:
             if re.search(pattern, normalized):
                 return level
 
-    return SeniorityLevel.MID
+    return SeniorityLevel.UNKNOWN
 
 
 def classify_role(title: str) -> RoleFamily:

@@ -9,23 +9,42 @@ import re
 
 
 SKILL_ALIASES = {
+    # Artificial intelligence
+    "ai": "artificial intelligence",
+    "artificial intelligence": "artificial intelligence",
+    "artificial intelligence (ai)": "artificial intelligence",
+
     # Generative AI / LLM
     "rag": "retrieval-augmented generation",
     "retrieval augmented generation": "retrieval-augmented generation",
     "retrieval-augmented generation": "retrieval-augmented generation",
+    "retrieval augmented generation (rag)": "retrieval-augmented generation",
+    "retrieval-augmented generation (rag)": "retrieval-augmented generation",
+    "rag (retrieval-augmented generation)": "retrieval-augmented generation",
 
     "llm": "large language models",
     "llms": "large language models",
     "large language model": "large language models",
     "large language models": "large language models",
+    "large language models (llms)": "large language models",
+    "large language model (llm)": "large language models",
+
+    "genai": "generative ai",
+    "gen ai": "generative ai",
+    "generative ai": "generative ai",
+    "generative artificial intelligence": "generative ai",
+
+    # Large language models
+    "llm": "large language models",
+    "llms": "large language models",
+    "large language model": "large language models",
+    "large language models": "large language models",
+    "large language models (llms)": "large language models",
+    "large language model (llm)": "large language models",
 
     # Machine learning
     "ml": "machine learning",
     "machine learning": "machine learning",
-
-    # Artificial intelligence
-    "ai": "artificial intelligence",
-    "artificial intelligence": "artificial intelligence",
 
     # NLP
     "nlp": "natural language processing",
@@ -83,6 +102,76 @@ SKILL_ALIASES = {
     # Git
     "git": "git",
     "github": "github",
+    
+    # AWS
+    "amazon web services": "aws",
+    "aws": "aws",
+
+    # Apache Spark
+    "apache spark": "spark",
+    "spark": "spark",
+
+    # Node.js
+    "node": "node.js",
+    "node.js": "node.js",
+    "nodejs": "node.js",
+
+    # Next.js
+    "next": "next.js",
+    "next.js": "next.js",
+    "nextjs": "next.js",
+
+    # Hugging Face
+    "huggingface": "hugging face",
+    "hugging face": "hugging face",
+
+    # C#
+    "c sharp": "c#",
+    "c#": "c#",
+    # Cloud platforms
+    "google cloud platform": "gcp",
+    "gcp": "gcp",
+
+    "amazon web services": "aws",
+    "aws": "aws",
+
+    "microsoft azure": "azure",
+    "azure": "azure",
+
+    # Kafka
+    "apache kafka": "kafka",
+    "kafka": "kafka",
+
+    # Business intelligence
+    "business intelligence": "business intelligence",
+    "business intelligence (bi)": "business intelligence",
+
+    # APIs
+    "rest api": "rest apis",
+    "rest apis": "rest apis",
+    "restful api": "rest apis",
+    "restful apis": "rest apis",
+
+    # PySpark
+    "pyspark": "pyspark",
+    "apache spark": "spark",
+    "spark": "spark",
+    
+    # MLOps
+    "mlops": "mlops",
+    "ml ops": "mlops",
+    "machine learning operations": "mlops",
+
+    # Kubernetes
+    "kubernetes": "kubernetes",
+    "k8s": "kubernetes",
+
+    # CI/CD
+    "ci/cd": "ci/cd",
+    "ci cd": "ci/cd",
+    "continuous integration": "ci/cd",
+    "continuous delivery": "ci/cd",
+    "continuous deployment": "ci/cd",
 }
 
 

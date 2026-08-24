@@ -89,4 +89,32 @@ def test_parse_wellfound_job():
     assert job.posted_at == datetime.fromisoformat(
         "2026-08-17T08:00:00+00:00"
     )
+
+
+def test_parse_wellfound_job_uses_enrichment_when_experience_is_none():
+    collector = WellfoundCollector(http_client=FakeHTTPClient({}))
+
+    job = collector._parse_job({
+        "id": 456,
+        "title": "AI Engineer",
+        "company": "Example AI",
+        "description": "3+ years of experience with Python.",
+        "experience_years_required": None,
+    })
+
+    assert job.experience_years_required == 3.0
+
+
+def test_parse_wellfound_job_preserves_explicit_experience_value():
+    collector = WellfoundCollector(http_client=FakeHTTPClient({}))
+
+    job = collector._parse_job({
+        "id": 789,
+        "title": "AI Engineer",
+        "company": "Example AI",
+        "description": "3+ years of experience with Python.",
+        "experience_years_required": 2.0,
+    })
+
+    assert job.experience_years_required == 2.0
     
