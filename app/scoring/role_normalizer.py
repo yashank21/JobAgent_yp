@@ -259,7 +259,9 @@ ROLE_PATTERNS = {
 
         # Software Engineer + ML
         r"\bsoftware engineer.*machine learning\b",
-        r"\bsoftware engineer.*ml\b",
+        # Software Engineer + explicit ML specialization
+        r"\bsoftware engineer\s*(?:,|-)\s*ml\b",
+        r"\bsoftware engineer\s*(?:,|-)\s*machine learning\b",
         r"\bsoftware engineer.*ai/ml\b",
         r"\bsoftware engineer.*ai ml\b",
 
@@ -284,7 +286,9 @@ ROLE_PATTERNS = {
 
         # Software Engineer + AI
         r"\bsoftware engineer.*artificial intelligence\b",
-        r"\bsoftware engineer.*\bai\b",
+        # Software Engineer + explicit AI specialization
+        r"\bsoftware engineer\s*(?:,|-)\s*ai\b",
+        r"\bsoftware engineer\s*(?:,|-)\s*artificial intelligence\b",
     ],
 
     # ========================================================
