@@ -311,25 +311,24 @@ def extract_skills(
     #
     #   spark
     #
+        # Search both canonical skills and their known aliases.
+    #
+    # Aliases are surface forms only. They are always converted to their
+    # canonical representation before being returned.
+    searchable_skills = set(candidate_skills)
+
+    for alias, canonical in SKILL_ALIASES.items():
+        if canonical in candidate_skills:
+            searchable_skills.add(alias)
+
     ordered_skills = sorted(
-        candidate_skills,
+        searchable_skills,
         key=len,
         reverse=True,
     )
 
     for skill in ordered_skills:
-
         canonical = _canonical_skill(skill)
-
-        # Ignore aliases that don't map to a known canonical skill.
-        if canonical not in TECH_SKILLS:
-            # Canonical aliases may point to a skill represented in the
-            # canonical set even when the original alias isn't there.
-            if canonical not in {
-                _canonical_skill(item)
-                for item in candidate_skills
-            }:
-                continue
 
         pattern = _skill_pattern(skill)
 

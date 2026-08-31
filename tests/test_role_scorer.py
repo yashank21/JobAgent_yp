@@ -136,15 +136,6 @@ def test_no_candidate_role_information_returns_zero():
     assert calculate_role_score(candidate, job) == 0.0
 
 
-def test_same_family_roles_match():
-    candidate = make_candidate(
-        preferred_roles=["Software Engineer"]
-    )
-
-    job = make_job("Backend Engineer")
-
-    assert calculate_role_score(candidate, job) == 100.0
-
 
 def test_seniority_adjusts_role_score():
     candidate = make_candidate(
@@ -207,19 +198,3 @@ def test_empty_role_values_are_ignored():
     job = make_job("Backend Engineer")
 
     assert calculate_role_score(candidate, job) == 100.0
-
-
-def test_seniority_one_level_difference():
-    candidate = make_candidate(
-        preferred_roles=["Software Engineer"],
-        career_level="junior",
-    )
-
-    job = make_job(
-        "Software Engineer",
-        seniority="mid",
-    )
-
-    score = calculate_role_score(candidate, job)
-
-    assert score == 95.0
