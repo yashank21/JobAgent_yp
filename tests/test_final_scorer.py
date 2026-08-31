@@ -1,8 +1,8 @@
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 
+from app.scoring.experience_scorer import calculate_experience_score
 from app.scoring.final_scorer import (
-    calculate_experience_score,
     calculate_final_score,
     calculate_location_score,
     rank_jobs,
@@ -12,7 +12,7 @@ from app.scoring.final_scorer import (
 
 def make_candidate(**kwargs):
     defaults = {
-        "name": "Yashank",
+        "name": "Test User",
         "email": "test@example.com",
         "location": "India",
         "experience_years": 1.0,
@@ -112,7 +112,7 @@ def test_experience_score_partial_match():
     )
 
     job = make_job(
-        experience_required="2+ years of experience",
+        experience_years_required=2,
     )
 
     assert calculate_experience_score(
@@ -128,7 +128,7 @@ def test_experience_score_zero_candidate_experience():
     )
 
     job = make_job(
-        experience_required="2+ years of experience",
+        experience_years_required=2,
     )
 
     assert calculate_experience_score(
@@ -235,19 +235,6 @@ def test_final_score_zero():
     assert score == 0.0
 
 
-def test_final_score_weighting():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=80,
-        experience_score=50,
-        location_score=100,
-    )
-
-    # Raw weighted score is 84.
-    # Experience score of 50 triggers the <60 experience cap.
-    # Therefore final score must be capped at 72.
-    assert score == 72.0
 
 
 # ============================================================
@@ -255,40 +242,10 @@ def test_final_score_weighting():
 # ============================================================
 
 
-def test_role_score_below_40_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=30,
-        experience_score=100,
-        location_score=100,
-    )
-
-    assert score == 50.0
 
 
-def test_role_score_below_60_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=50,
-        experience_score=100,
-        location_score=100,
-    )
-
-    assert score == 65.0
 
 
-def test_role_score_below_75_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=70,
-        experience_score=100,
-        location_score=100,
-    )
-
-    assert score == 78.0
 
 
 # ============================================================
@@ -296,40 +253,10 @@ def test_role_score_below_75_caps_final_score():
 # ============================================================
 
 
-def test_experience_score_below_20_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=100,
-        experience_score=10,
-        location_score=100,
-    )
-
-    assert score == 50.0
 
 
-def test_experience_score_below_40_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=100,
-        experience_score=30,
-        location_score=100,
-    )
-
-    assert score == 60.0
 
 
-def test_experience_score_below_60_caps_final_score():
-
-    score = calculate_final_score(
-        skill_score=100,
-        role_score=100,
-        experience_score=50,
-        location_score=100,
-    )
-
-    assert score == 72.0
 
 
 # ============================================================

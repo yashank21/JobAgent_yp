@@ -114,4 +114,4 @@ def test_internship_experience_is_counted():
         job,
     )
 
-    assert score == (11 / 12) / 2 * 100
+    assert score == round((11 / 12) / 2 * 100, 2)

@@ -42,7 +42,7 @@ class Job:
     seniority: str = "unknown"
     role_family: str = ""
     job_type: str | None = None
-    gemini_confidence: float = 0.0
+    ai_confidence: float = 0.0
 
     required_skills: list[str] = field(default_factory=list)
     preferred_skills: list[str] = field(default_factory=list)

@@ -1,15 +1,16 @@
 """
-Experience scoring utilities.
+Experience compatibility scoring.
 
-Scores how well a candidate's experience matches
-the experience level required by a job.
+General-purpose candidate-driven experience scoring.
 
-The scorer is intentionally flexible:
-- Missing requirements are neutral.
-- Meeting the requirement gives a strong score.
-- Slightly under-qualified candidates are not crushed.
-- Large experience gaps are penalized progressively.
-- The job's seniority wording can influence the score.
+Rules:
+- Numeric job requirements are the strongest signal.
+- Meeting or exceeding the requirement = 100.
+- Partial experience receives a proportional score.
+- No experience for a positive requirement = 0.
+- If no numeric requirement exists, job seniority is used as a
+  broad fallback.
+- No candidate-specific thresholds are hardcoded.
 """
 
 import re
@@ -19,8 +20,7 @@ from app.models.job import Job
 from app.services.experience_parser import parse_experience_years
 
 
-def _clean(value) -> str:
-    """Normalize text safely."""
+def _clean(value: object) -> str:
     if value is None:
         return ""
 
@@ -31,93 +31,265 @@ def _clean(value) -> str:
     )
 
 
+def _candidate_years(candidate: CandidateProfile) -> float:
+    try:
+        return max(
+            float(
+                getattr(
+                    candidate,
+                    "experience_years",
+                    0.0,
+                )
+                or 0.0
+            ),
+            0.0,
+        )
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _detect_seniority(job: Job) -> str:
     """
-    Detect broad seniority from job title and experience text.
-
-    Returns one of:
-    - intern
-    - entry
-    - junior
-    - mid
-    - senior
-    - staff
-    - lead
-    - unknown
+    Determine job seniority from enriched metadata or job text.
     """
 
-    title = _clean(getattr(job, "title", ""))
+    seniority = _clean(
+        getattr(job, "seniority", "")
+    )
+
+    confidence = float(
+        getattr(
+            job,
+            "ai_confidence",
+            0.0,
+        )
+        or 0.0
+    )
+
+    if (
+        seniority
+        and seniority != "unknown"
+        and confidence >= 0.60
+    ):
+        return seniority
+
+    title = _clean(
+        getattr(job, "title", "")
+    )
+
     experience = _clean(
         getattr(job, "experience_required", "")
     )
 
     text = f"{title} {experience}"
 
-    # --------------------------------------------------------
-    # Internship / student roles
-    # --------------------------------------------------------
+    patterns = (
+        (
+            "director",
+            r"\b(director|vp|vice president|head of)\b",
+        ),
+        (
+            "manager",
+            r"\b(manager|engineering manager|people manager)\b",
+        ),
+        (
+            "principal",
+            r"\b(principal|distinguished)\b",
+        ),
+        (
+            "staff",
+            r"\bstaff\b",
+        ),
+        (
+            "lead",
+            r"\b(lead|tech lead|technical lead)\b",
+        ),
+        (
+            "senior",
+            r"\b(senior|sr\.?)\b",
+        ),
+        (
+            "intern",
+            r"\b(intern|internship|trainee)\b",
+        ),
+        (
+            "entry",
+            r"\b(entry[- ]level|graduate|fresher|new grad)\b",
+        ),
+        (
+            "junior",
+            r"\b(junior|jr\.?)\b",
+        ),
+        (
+            "mid",
+            r"\b(mid[- ]level|mid)\b",
+        ),
+    )
 
-    if re.search(
-        r"\b(intern|internship|trainee|student)\b",
-        text,
+    for level, pattern in patterns:
+        if re.search(pattern, text):
+            return level
+
+    return "unknown"
+
+
+def _required_years(job: Job) -> float | None:
+    """
+    Extract the most reliable numeric experience requirement.
+    """
+
+    explicit = getattr(
+        job,
+        "experience_years_required",
+        None,
+    )
+
+    if explicit is not None:
+        try:
+            value = float(explicit)
+
+            if value > 0:
+                return value
+
+        except (TypeError, ValueError):
+            pass
+
+    for field_name in (
+        "experience_required",
+        "description",
     ):
-        return "intern"
+        text = getattr(
+            job,
+            field_name,
+            "",
+        ) or ""
 
-    # --------------------------------------------------------
-    # Staff / principal
-    # --------------------------------------------------------
+        parsed = parse_experience_years(text)
 
-    if re.search(
-        r"\b(principal|staff|distinguished)\b",
-        text,
-    ):
-        return "staff"
+        if parsed is not None and parsed > 0:
+            return float(parsed)
 
-    # --------------------------------------------------------
-    # Lead / manager
-    # --------------------------------------------------------
+    return None
 
-    if re.search(
-        r"\b(lead|manager|head of|director)\b",
-        text,
-    ):
-        return "lead"
 
-    # --------------------------------------------------------
-    # Senior
-    # --------------------------------------------------------
+def _numeric_experience_score(
+    candidate_years: float,
+    required_years: float,
+) -> float:
+    """
+    Score candidate experience against an explicit requirement.
 
-    if re.search(
-        r"\b(senior|sr\.?|sr)\b",
-        text,
-    ):
-        return "senior"
+    The score is proportional to the candidate's experience until
+    the requirement is met.
+    """
 
-    # --------------------------------------------------------
-    # Junior
-    # --------------------------------------------------------
+    if required_years <= 0:
+        return 100.0
 
-    if re.search(
-        r"\b(junior|jr\.?|jr)\b",
-        text,
-    ):
-        return "junior"
+    if candidate_years <= 0:
+        return 0.0
 
-    # --------------------------------------------------------
-    # Entry level
-    # --------------------------------------------------------
+    if candidate_years >= required_years:
+        return 100.0
 
-    if re.search(
-        r"\b(entry[- ]level|graduate|fresher|new grad|associate)\b",
-        text,
-    ):
-        return "entry"
+    return round(
+        (candidate_years / required_years) * 100,
+        2,
+    )
 
-    # --------------------------------------------------------
-    # Generic software/engineering role
-    # --------------------------------------------------------
 
-    return "mid"
+def _seniority_experience_score(
+    candidate_years: float,
+    seniority: str,
+) -> float:
+    """
+    Fallback scoring when no numeric requirement exists.
+
+    These are broad industry-oriented experience bands rather than
+    thresholds tied to a particular candidate.
+    """
+
+    if seniority == "intern":
+        if candidate_years <= 1.0:
+            return 100.0
+        return 80.0
+
+    if seniority == "entry":
+        if candidate_years <= 2.0:
+            return 100.0
+        return 90.0
+
+    if seniority == "junior":
+        if candidate_years <= 2.0:
+            return 100.0
+        if candidate_years <= 4.0:
+            return 90.0
+        return 80.0
+
+    if seniority == "mid":
+        if candidate_years >= 2.0:
+            return 100.0
+        if candidate_years > 0:
+            return 50.0
+        return 0.0
+
+    if seniority == "senior":
+        if candidate_years >= 5.0:
+            return 100.0
+        if candidate_years >= 3.0:
+            return 80.0
+        if candidate_years > 0:
+            return 40.0
+        return 0.0
+
+    if seniority == "lead":
+        if candidate_years >= 7.0:
+            return 100.0
+        if candidate_years >= 5.0:
+            return 75.0
+        if candidate_years > 0:
+            return 35.0
+        return 0.0
+
+    if seniority == "staff":
+        if candidate_years >= 8.0:
+            return 100.0
+        if candidate_years >= 6.0:
+            return 75.0
+        if candidate_years > 0:
+            return 30.0
+        return 0.0
+
+    if seniority == "principal":
+        if candidate_years >= 10.0:
+            return 100.0
+        if candidate_years >= 8.0:
+            return 75.0
+        if candidate_years > 0:
+            return 25.0
+        return 0.0
+
+    if seniority == "manager":
+        if candidate_years >= 7.0:
+            return 100.0
+        if candidate_years >= 5.0:
+            return 75.0
+        if candidate_years > 0:
+            return 30.0
+        return 0.0
+
+    if seniority == "director":
+        if candidate_years >= 10.0:
+            return 100.0
+        if candidate_years >= 8.0:
+            return 75.0
+        if candidate_years > 0:
+            return 25.0
+        return 0.0
+
+    # Unknown seniority means there is insufficient evidence
+    # to penalize the candidate.
+    return 100.0
 
 
 def calculate_experience_score(
@@ -125,138 +297,32 @@ def calculate_experience_score(
     job: Job,
 ) -> float:
     """
-    Calculate experience compatibility.
+    Calculate candidate-job experience compatibility from 0 to 100.
 
-    Returns a score between 0 and 100.
+    Priority:
 
-    Important:
-    This is NOT a strict mathematical requirement checker.
-
-    A candidate who is slightly below a requirement can still
-    receive a strong score because real-world job requirements
-    are often flexible.
+        1. Explicit numeric requirement
+        2. Parsed numeric requirement
+        3. Job seniority
+        4. Unknown -> neutral/full score
     """
 
-    candidate_years = max(
-        float(candidate.experience_years or 0.0),
-        0.0,
-    )
+    candidate_years = _candidate_years(candidate)
 
-    required_years = parse_experience_years(
-        getattr(job, "experience_required", None)
-    )
+    required_years = _required_years(job)
+
+    if required_years is not None:
+        return _numeric_experience_score(
+            candidate_years,
+            required_years,
+        )
 
     seniority = _detect_seniority(job)
 
-    # ========================================================
-    # Internship / trainee roles
-    # ========================================================
-
-    if seniority == "intern":
-        # An experienced candidate is not a natural match
-        # for an internship, even if they technically qualify.
-        if candidate_years <= 0.5:
-            return 100.0
-
-        if candidate_years <= 1.0:
-            return 70.0
-
-        if candidate_years <= 2.0:
-            return 40.0
-
-        return 20.0
-
-    # ========================================================
-    # No explicit numeric requirement
-    # ========================================================
-
-    if required_years is None:
-        if seniority == "entry":
-            if candidate_years <= 1.5:
-                return 100.0
-
-            if candidate_years <= 3.0:
-                return 80.0
-
-            return 60.0
-
-        if seniority == "junior":
-            if candidate_years <= 2.0:
-                return 100.0
-
-            if candidate_years <= 3.0:
-                return 90.0
-
-            return 75.0
-
-        if seniority == "senior":
-            if candidate_years >= 3.0:
-                return 90.0
-
-            if candidate_years >= 2.0:
-                return 70.0
-
-            return 50.0
-
-        if seniority in {"staff", "lead"}:
-            if candidate_years >= 5.0:
-                return 90.0
-
-            if candidate_years >= 3.0:
-                return 65.0
-
-            return 40.0
-
-        # Generic role with no explicit requirement.
-        return 70.0
-
-    # ========================================================
-    # Defensive handling
-    # ========================================================
-
-    if required_years <= 0:
-        return 70.0
-
-    # ========================================================
-    # Candidate meets requirement
-    # ========================================================
-
-    if candidate_years >= required_years:
-        # Don't automatically give 100 to massively
-        # overqualified candidates.
-        excess_ratio = (
-            candidate_years / required_years
-        )
-
-        if excess_ratio <= 1.5:
-            return 100.0
-
-        if excess_ratio <= 2.5:
-            return 90.0
-
-        return 80.0
-
-    # ========================================================
-    # Candidate is below requirement
-    # ========================================================
-
-    gap = required_years - candidate_years
-
-    # Slightly under the requirement.
-    if gap <= 1.0:
-        return 85.0
-
-    # Moderately under.
-    if gap <= 2.0:
-        return 70.0
-
-    # Significant gap.
-    if gap <= 3.0:
-        return 55.0
-
-    # Large gap.
-    if gap <= 5.0:
-        return 35.0
-
-    # Very large gap.
-    return 20.0
+    return round(
+        _seniority_experience_score(
+            candidate_years,
+            seniority,
+        ),
+        2,
+    )

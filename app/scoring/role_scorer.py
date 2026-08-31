@@ -1,378 +1,98 @@
 """
-Role scoring utilities.
+Role compatibility scoring.
 
-Scores how well a job matches the candidate's target roles.
+Candidate-driven and candidate-agnostic.
 
-The scorer distinguishes between:
+Scoring sources:
+    1. Explicit preferred roles
+    2. Secondary roles
+    3. Resume-derived roles
 
-1. Primary roles
-   - Core career targets.
-   - Strongest role compatibility.
-
-2. Secondary roles
-   - Acceptable fallback/adjacent roles.
-   - Intentionally scored lower than primary roles.
-
-3. Seniority
-   - Prevents senior/principal jobs from looking like
-     excellent matches for an entry-level candidate.
-
-Role family is more important than seniority, but severe
-seniority mismatches are capped.
+RoleFamily is used only to determine whether two roles belong to
+the same broad family. No candidate-specific compatibility matrix
+is used.
 """
+
+from __future__ import annotations
 
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
-
-from app.scoring.role_normalizer import (
-    RoleFamily,
-    SeniorityLevel,
-    classify_role,
-    classify_seniority,
-)
+from app.scoring.role_normalizer import RoleFamily, classify_role
 
 
-# ------------------------------------------------------------------
-# Secondary role multiplier
-# ------------------------------------------------------------------
+# Explicit user intent is strongest.
+PREFERRED_WEIGHT = 1.00
+SECONDARY_WEIGHT = 0.85
+RESUME_WEIGHT = 0.70
 
-SECONDARY_ROLE_MULTIPLIER = 0.75
+# Small seniority adjustment.
+SENIORITY_WEIGHT = 0.15
+ROLE_WEIGHT = 0.85
 
 
-# ------------------------------------------------------------------
-# ROLE COMPATIBILITY
-# ------------------------------------------------------------------
-#
-# Rows    = candidate preferred role
-# Columns = actual job role
-#
-# These scores describe ROLE similarity only.
-# Seniority is handled separately.
-# ------------------------------------------------------------------
-
-ROLE_COMPATIBILITY = {
-
-    # ============================================================== 
-    # AI ENGINEERING
-    # ==============================================================
-
-    RoleFamily.AI_ENGINEERING: {
-        RoleFamily.AI_ENGINEERING: 100.0,
-        RoleFamily.MACHINE_LEARNING: 95.0,
-        RoleFamily.LLM_GENAI: 95.0,
-        RoleFamily.RESEARCH_ENGINEERING: 90.0,
-        RoleFamily.FORWARD_DEPLOYED: 85.0,
-        RoleFamily.DATA_SCIENCE: 75.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 70.0,
-        RoleFamily.DATA_ENGINEERING: 60.0,
-        RoleFamily.BACKEND_ENGINEERING: 55.0,
-        RoleFamily.DEVOPS: 55.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 45.0,
-    },
-
-    # ============================================================== 
-    # MACHINE LEARNING
-    # ==============================================================
-
-    RoleFamily.MACHINE_LEARNING: {
-        RoleFamily.MACHINE_LEARNING: 100.0,
-        RoleFamily.AI_ENGINEERING: 95.0,
-        RoleFamily.LLM_GENAI: 95.0,
-        RoleFamily.RESEARCH_ENGINEERING: 90.0,
-        RoleFamily.DATA_SCIENCE: 85.0,
-        RoleFamily.FORWARD_DEPLOYED: 80.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 75.0,
-        RoleFamily.DATA_ENGINEERING: 65.0,
-        RoleFamily.BACKEND_ENGINEERING: 55.0,
-        RoleFamily.DEVOPS: 55.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 45.0,
-    },
-
-    # ============================================================== 
-    # LLM / GENAI
-    # ==============================================================
-
-    RoleFamily.LLM_GENAI: {
-        RoleFamily.LLM_GENAI: 100.0,
-        RoleFamily.AI_ENGINEERING: 95.0,
-        RoleFamily.MACHINE_LEARNING: 95.0,
-        RoleFamily.RESEARCH_ENGINEERING: 90.0,
-        RoleFamily.FORWARD_DEPLOYED: 85.0,
-        RoleFamily.DATA_SCIENCE: 75.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 70.0,
-        RoleFamily.BACKEND_ENGINEERING: 60.0,
-        RoleFamily.DATA_ENGINEERING: 60.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 50.0,
-        RoleFamily.DEVOPS: 50.0,
-    },
-
-    # ============================================================== 
-    # RESEARCH ENGINEERING
-    # ==============================================================
-
-    RoleFamily.RESEARCH_ENGINEERING: {
-        RoleFamily.RESEARCH_ENGINEERING: 100.0,
-        RoleFamily.MACHINE_LEARNING: 95.0,
-        RoleFamily.AI_ENGINEERING: 95.0,
-        RoleFamily.LLM_GENAI: 95.0,
-        RoleFamily.DATA_SCIENCE: 85.0,
-        RoleFamily.FORWARD_DEPLOYED: 75.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 65.0,
-        RoleFamily.DATA_ENGINEERING: 55.0,
-        RoleFamily.BACKEND_ENGINEERING: 50.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 45.0,
-        RoleFamily.DEVOPS: 45.0,
-    },
-
-    # ============================================================== 
-    # FORWARD DEPLOYED
-    # ==============================================================
-
-    RoleFamily.FORWARD_DEPLOYED: {
-        RoleFamily.FORWARD_DEPLOYED: 100.0,
-        RoleFamily.AI_ENGINEERING: 90.0,
-        RoleFamily.MACHINE_LEARNING: 85.0,
-        RoleFamily.LLM_GENAI: 85.0,
-        RoleFamily.RESEARCH_ENGINEERING: 80.0,
-        RoleFamily.DATA_SCIENCE: 75.0,
-        RoleFamily.BACKEND_ENGINEERING: 65.0,
-        RoleFamily.DATA_ENGINEERING: 60.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 60.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 55.0,
-    },
-
-    # ============================================================== 
-    # DATA SCIENCE
-    # ==============================================================
-
-    RoleFamily.DATA_SCIENCE: {
-        RoleFamily.DATA_SCIENCE: 100.0,
-        RoleFamily.MACHINE_LEARNING: 90.0,
-        RoleFamily.AI_ENGINEERING: 85.0,
-        RoleFamily.LLM_GENAI: 80.0,
-        RoleFamily.RESEARCH_ENGINEERING: 80.0,
-        RoleFamily.DATA_ENGINEERING: 75.0,
-        RoleFamily.FORWARD_DEPLOYED: 70.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 55.0,
-        RoleFamily.BACKEND_ENGINEERING: 45.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 40.0,
-    },
-
-    # ============================================================== 
-    # ML PLATFORM
-    # ==============================================================
-
-    RoleFamily.DEVOPS_ML_PLATFORM: {
-        RoleFamily.DEVOPS_ML_PLATFORM: 100.0,
-        RoleFamily.DEVOPS: 90.0,
-        RoleFamily.MACHINE_LEARNING: 80.0,
-        RoleFamily.AI_ENGINEERING: 75.0,
-        RoleFamily.LLM_GENAI: 70.0,
-        RoleFamily.DATA_ENGINEERING: 70.0,
-        RoleFamily.FORWARD_DEPLOYED: 65.0,
-        RoleFamily.BACKEND_ENGINEERING: 65.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 55.0,
-    },
-    
-    RoleFamily.DEVOPS: {
-        RoleFamily.DEVOPS: 100.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 90.0,
-        RoleFamily.BACKEND_ENGINEERING: 75.0,
-        RoleFamily.DATA_ENGINEERING: 75.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 65.0,
-        RoleFamily.MACHINE_LEARNING: 55.0,
-        RoleFamily.AI_ENGINEERING: 50.0,
-        RoleFamily.LLM_GENAI: 50.0,
-        RoleFamily.DATA_SCIENCE: 45.0,
-        RoleFamily.RESEARCH_ENGINEERING: 45.0,
-        RoleFamily.FORWARD_DEPLOYED: 65.0,
-    },
-
-    # ============================================================== 
-    # DATA ENGINEERING
-    # ==============================================================
-
-    RoleFamily.DATA_ENGINEERING: {
-        RoleFamily.DATA_ENGINEERING: 100.0,
-        RoleFamily.DATA_SCIENCE: 85.0,
-        RoleFamily.MACHINE_LEARNING: 75.0,
-        RoleFamily.AI_ENGINEERING: 70.0,
-        RoleFamily.DEVOPS: 75.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 70.0,
-        RoleFamily.LLM_GENAI: 65.0,
-        RoleFamily.FORWARD_DEPLOYED: 60.0,
-        RoleFamily.BACKEND_ENGINEERING: 60.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 0.0,
-    },
-
-    # ============================================================== 
-    # BACKEND
-    # ==============================================================
-
-    RoleFamily.BACKEND_ENGINEERING: {
-        RoleFamily.BACKEND_ENGINEERING: 100.0,
-        RoleFamily.SOFTWARE_ENGINEERING: 90.0,
-        RoleFamily.DEVOPS: 70.0,
-        RoleFamily.FORWARD_DEPLOYED: 70.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 65.0,
-        RoleFamily.DATA_ENGINEERING: 60.0,
-        RoleFamily.AI_ENGINEERING: 50.0,
-        RoleFamily.MACHINE_LEARNING: 50.0,
-        RoleFamily.LLM_GENAI: 50.0,
-        RoleFamily.DATA_SCIENCE: 45.0,
-    },
-
-    # ============================================================== 
-    # SOFTWARE ENGINEERING
-    # ==============================================================
-
-    RoleFamily.SOFTWARE_ENGINEERING: {
-        RoleFamily.SOFTWARE_ENGINEERING: 100.0,
-        RoleFamily.BACKEND_ENGINEERING: 90.0,
-        RoleFamily.FORWARD_DEPLOYED: 65.0,
-        RoleFamily.DEVOPS_ML_PLATFORM: 60.0,
-        RoleFamily.DEVOPS: 60.0,
-        RoleFamily.DATA_ENGINEERING: 55.0,
-        RoleFamily.AI_ENGINEERING: 45.0,
-        RoleFamily.MACHINE_LEARNING: 45.0,
-        RoleFamily.LLM_GENAI: 45.0,
-        RoleFamily.DATA_SCIENCE: 40.0,
-    },
+SENIORITY_ORDER = {
+    "intern": 0,
+    "junior": 1,
+    "entry": 1,
+    "mid": 2,
+    "senior": 3,
+    "lead": 4,
+    "staff": 5,
+    "principal": 6,
+    "manager": 6,
+    "director": 7,
+    "unknown": None,
 }
 
 
-# ------------------------------------------------------------------
-# SENIORITY COMPATIBILITY
-# ------------------------------------------------------------------
+def _normalize_seniority(value: str | None) -> str:
+    if not value:
+        return "unknown"
 
-SENIORITY_SCORES = {
+    value = str(value).strip().lower()
 
-    SeniorityLevel.ENTRY: {
-        SeniorityLevel.ENTRY: 100.0,
-        SeniorityLevel.MID: 80.0,
-        SeniorityLevel.SENIOR: 55.0,
-        SeniorityLevel.LEAD: 30.0,
-        SeniorityLevel.STAFF: 15.0,
-        SeniorityLevel.PRINCIPAL: 5.0,
-        SeniorityLevel.MANAGER: 0.0,
-        SeniorityLevel.DIRECTOR: 0.0,
-    },
+    aliases = {
+        "entry-level": "entry",
+        "entry level": "entry",
+        "new grad": "entry",
+        "new graduate": "entry",
+        "associate": "junior",
+    }
 
-    SeniorityLevel.MID: {
-        SeniorityLevel.ENTRY: 90.0,
-        SeniorityLevel.MID: 100.0,
-        SeniorityLevel.SENIOR: 85.0,
-        SeniorityLevel.LEAD: 65.0,
-        SeniorityLevel.STAFF: 50.0,
-        SeniorityLevel.PRINCIPAL: 30.0,
-        SeniorityLevel.MANAGER: 20.0,
-        SeniorityLevel.DIRECTOR: 5.0,
-    },
+    return aliases.get(value, value)
 
-    SeniorityLevel.SENIOR: {
-        SeniorityLevel.ENTRY: 70.0,
-        SeniorityLevel.MID: 85.0,
-        SeniorityLevel.SENIOR: 100.0,
-        SeniorityLevel.LEAD: 85.0,
-        SeniorityLevel.STAFF: 70.0,
-        SeniorityLevel.PRINCIPAL: 50.0,
-        SeniorityLevel.MANAGER: 35.0,
-        SeniorityLevel.DIRECTOR: 10.0,
-    },
-}
-
-
-# ------------------------------------------------------------------
-# Candidate seniority
-# ------------------------------------------------------------------
-
-def _candidate_seniority(
-    candidate: CandidateProfile,
-) -> SeniorityLevel:
-
-    years = max(
-        candidate.experience_years,
-        0.0,
-    )
-
-    if years <= 1.5:
-        return SeniorityLevel.ENTRY
-
-    if years <= 3.0:
-        return SeniorityLevel.MID
-
-    return SeniorityLevel.SENIOR
-
-
-# ------------------------------------------------------------------
-# Seniority score
-# ------------------------------------------------------------------
 
 def _seniority_score(
-    candidate: CandidateProfile,
-    job_seniority: SeniorityLevel,
-) -> float:
+    candidate_seniority: str | None,
+    job_seniority: str | None,
+) -> float | None:
 
-    candidate_seniority = _candidate_seniority(candidate)
+    candidate = _normalize_seniority(candidate_seniority)
+    job = _normalize_seniority(job_seniority)
 
-    if job_seniority == SeniorityLevel.UNKNOWN:
-        return 70.0
+    candidate_level = SENIORITY_ORDER.get(candidate)
+    job_level = SENIORITY_ORDER.get(job)
 
-    return SENIORITY_SCORES.get(
-        candidate_seniority,
-        {},
-    ).get(
-        job_seniority,
-        50.0,
-    )
+    if candidate_level is None or job_level is None:
+        return None
 
+    difference = abs(job_level - candidate_level)
 
-# ------------------------------------------------------------------
-# Role family score
-# ------------------------------------------------------------------
+    if difference == 0:
+        return 100.0
 
-def _score_role_pair(
-    preferred_family: RoleFamily,
-    job_family: RoleFamily,
-) -> float:
+    if difference == 1:
+        return 75.0
 
-    if (
-        preferred_family == RoleFamily.UNKNOWN
-        or job_family == RoleFamily.UNKNOWN
-    ):
-        return 0.0
+    if difference == 2:
+        return 50.0
 
-    return ROLE_COMPATIBILITY.get(
-        preferred_family,
-        {},
-    ).get(
-        job_family,
-        0.0,
-    )
+    return 25.0
 
-
-# ------------------------------------------------------------------
-# Excluded role families
-# ------------------------------------------------------------------
-
-EXCLUDED_ROLE_FAMILIES = {
-    RoleFamily.MANAGEMENT,
-    RoleFamily.PRODUCT,
-    RoleFamily.SUPPORT_ENGINEERING,
-    RoleFamily.CUSTOMER_ENGINEERING,
-    RoleFamily.INTEGRATION_ENGINEERING,
-    RoleFamily.RPA_ENGINEERING,
-    RoleFamily.MOBILE_ENGINEERING,
-    RoleFamily.FRONTEND_ENGINEERING,
-}
 
 def _resolve_role_family(
     value: str | RoleFamily,
 ) -> RoleFamily:
-    """
-    Resolve either a RoleFamily value or a natural-language
-    role/title into a RoleFamily.
-    """
 
     if isinstance(value, RoleFamily):
         return value
@@ -380,238 +100,171 @@ def _resolve_role_family(
     if not value:
         return RoleFamily.UNKNOWN
 
-    normalized = str(value).strip().lower()
-
-    # Direct canonical RoleFamily value.
-    for family in RoleFamily:
-        if normalized == family.value:
-            return family
-
-    # Otherwise treat it as a natural-language title.
     return classify_role(str(value))
 
+def _score_role_pair(
+    candidate_family: RoleFamily,
+    job_family: RoleFamily,
+) -> float:
+    """
+    Compatibility helper used by eligibility.
 
-# ------------------------------------------------------------------
-# Main role score
-# ------------------------------------------------------------------
+    Role compatibility is candidate-agnostic:
+    - Same RoleFamily -> compatible
+    - Different RoleFamily -> currently incompatible
+
+    Detailed candidate-driven weighting belongs to
+    calculate_role_score().
+    """
+
+    if (
+        candidate_family == RoleFamily.UNKNOWN
+        or job_family == RoleFamily.UNKNOWN
+    ):
+        return 0.0
+
+    if candidate_family == job_family:
+        return 100.0
+
+    return 0.0
+
+
+def _resolve_job_family(job: Job) -> RoleFamily:
+
+    ai_role_family = getattr(job, "role_family", "")
+    ai_confidence = float(
+        getattr(job, "ai_confidence", 0.0) or 0.0
+    )
+
+    if (
+        ai_role_family
+        and str(ai_role_family).strip().lower()
+        not in {"unknown", "other"}
+        and ai_confidence >= 0.60
+    ):
+        return _resolve_role_family(ai_role_family)
+
+    return _resolve_role_family(
+        getattr(job, "title", "")
+    )
+
+
+def _role_match_score(
+    role: str,
+    job_family: RoleFamily,
+) -> float:
+
+    if not role or job_family == RoleFamily.UNKNOWN:
+        return 0.0
+
+    candidate_family = _resolve_role_family(role)
+
+    if candidate_family == RoleFamily.UNKNOWN:
+        return 0.0
+
+    if candidate_family == job_family:
+        return 100.0
+
+    return 0.0
+
+
+def _best_role_score(
+    roles: list[str],
+    job_family: RoleFamily,
+    weight: float,
+) -> float | None:
+
+    scores = [
+        _role_match_score(role, job_family)
+        for role in roles
+        if role
+    ]
+
+    if not scores:
+        return None
+
+    return max(scores) * weight
+
 
 def calculate_role_score(
     candidate: CandidateProfile,
     job: Job,
 ) -> float:
     """
-    Calculate role compatibility using:
+    Calculate role compatibility from 0–100.
 
-    1. Primary role families
-    2. Secondary role families
-    3. Seniority compatibility
+    Priority:
+        preferred_roles > secondary_roles > resume_roles
 
-    Primary roles are only allowed to match strongly related
-    role families.
+    A role matches when the candidate role and job role resolve
+    to the same canonical RoleFamily.
 
-    Secondary roles are fallback matches and are always
-    scdef calculate_role_score(
-    candidate: CandidateProfile,
-    job: Job,
-) -> float:
+    Missing candidate role information is treated as unknown,
+    not as evidence of incompatibility.
     """
-    if not candidate.preferred_roles:
-        return 0.0
 
-    # --------------------------------------------------------
-    # Determine job role family
-    # --------------------------------------------------------
-
-    gemini_role_family = getattr(
-        job,
-        "role_family",
-        "",
-    )
-
-    gemini_confidence = float(
-        getattr(
-            job,
-            "gemini_confidence",
-            0.0,
-        )
-        or 0.0
-    )
-
-    if (
-        gemini_role_family
-        and str(gemini_role_family).lower() != "other"
-        and gemini_confidence >= 0.60
-    ):
-        job_family = _resolve_role_family(
-            gemini_role_family
-        )
-    else:
-        job_family = classify_role(
-            job.title
-        )
-
-    # --------------------------------------------------------
-    # Determine job seniority
-    # --------------------------------------------------------
-
-    gemini_seniority = getattr(
-        job,
-        "seniority",
-        "",
-    )
-
-    if (
-        gemini_seniority
-        and gemini_seniority.lower() != "unknown"
-        and gemini_confidence >= 0.60
-    ):
-        try:
-            job_seniority = classify_seniority(
-                gemini_seniority
-            )
-        except Exception:
-            job_seniority = classify_seniority(
-                job.title
-            )
-    else:
-        job_seniority = classify_seniority(
-            job.title
-        )
+    job_family = _resolve_job_family(job)
 
     if job_family == RoleFamily.UNKNOWN:
         return 0.0
 
-    # --------------------------------------------------------
-    # Roles that should never be target roles
-    # --------------------------------------------------------
+    preferred_roles = list(
+        getattr(candidate, "preferred_roles", []) or []
+    )
 
-    if job_family in EXCLUDED_ROLE_FAMILIES:
+    secondary_roles = list(
+        getattr(candidate, "secondary_roles", []) or []
+    )
+
+    resume_roles = list(
+        getattr(candidate, "resume_roles", []) or []
+    )
+
+    preferred_score = _best_role_score(
+        preferred_roles,
+        job_family,
+        PREFERRED_WEIGHT,
+    )
+
+    secondary_score = _best_role_score(
+        secondary_roles,
+        job_family,
+        SECONDARY_WEIGHT,
+    )
+
+    resume_score = _best_role_score(
+        resume_roles,
+        job_family,
+        RESUME_WEIGHT,
+    )
+
+    role_scores = [
+        score
+        for score in (
+            preferred_score,
+            secondary_score,
+            resume_score,
+        )
+        if score is not None
+    ]
+
+    if not role_scores:
         return 0.0
 
-    # --------------------------------------------------------
-    # Primary role families
-    # --------------------------------------------------------
-
-    primary_families = {
-        classify_role(role)
-        for role in candidate.preferred_roles
-    }
-
-    primary_families.discard(RoleFamily.UNKNOWN)
-    primary_families -= EXCLUDED_ROLE_FAMILIES
-
-    # --------------------------------------------------------
-    # Secondary role families
-    # --------------------------------------------------------
-
-    secondary_roles = getattr(
-        candidate,
-        "secondary_roles",
-        [],
-    )
-
-    secondary_families = {
-        classify_role(role)
-        for role in secondary_roles
-    }
-
-    secondary_families.discard(RoleFamily.UNKNOWN)
-    secondary_families -= EXCLUDED_ROLE_FAMILIES
-
-    # --------------------------------------------------------
-    # Seniority
-    # --------------------------------------------------------
+    role_score = max(role_scores)
 
     seniority_score = _seniority_score(
-        candidate,
-        job_seniority,
+        getattr(candidate, "career_level", None),
+        getattr(job, "seniority", None),
     )
 
-    # ========================================================
-    # PRIMARY ROLE MATCH
-    # ========================================================
-
-    best_primary_score = 0.0
-
-    for preferred_family in primary_families:
-
-        family_score = _score_role_pair(
-            preferred_family,
-            job_family,
-        )
-
-        if family_score <= 0:
-            continue
-
-        role_score = family_score
-
-        # ----------------------------------------------------
-        # Seniority is NOT blended into normal role similarity.
-        #
-        # A Software Engineer is still a Software Engineer
-        # even if the job is slightly more senior.
-        # ----------------------------------------------------
-
-        if seniority_score < 20:
-            role_score = min(role_score, 60.0)
-
-        elif seniority_score < 40:
-            role_score = min(role_score, 75.0)
-
-        elif seniority_score < 60:
-            role_score = min(role_score, 85.0)
-
-        best_primary_score = max(
-            best_primary_score,
-            role_score,
-        )
-
-    # ========================================================
-    # SECONDARY ROLE MATCH
-    # ========================================================
-
-    best_secondary_score = 0.0
-
-    for secondary_family in secondary_families:
-
-        family_score = _score_role_pair(
-            secondary_family,
-            job_family,
-        )
-
-        if family_score <= 0:
-            continue
-
+    if seniority_score is not None:
         role_score = (
-            family_score
-            * SECONDARY_ROLE_MULTIPLIER
+            role_score * ROLE_WEIGHT
+            + seniority_score * SENIORITY_WEIGHT
         )
 
-        # Secondary roles are intentionally weaker.
-        role_score = min(
-            role_score,
-            70.0,
-        )
-
-        if seniority_score < 40:
-            role_score = min(
-                role_score,
-                55.0,
-            )
-
-        best_secondary_score = max(
-            best_secondary_score,
-            role_score,
-        )
-
-        # ========================================================
-        # FINAL ROLE SCORE
-        # ========================================================
-
-        return round(
-            max(
-                best_primary_score,
-                best_secondary_score,
-            ),
-            2,
-        )
+    return round(
+        max(0.0, min(100.0, role_score)),
+        2,
+    )

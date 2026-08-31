@@ -41,102 +41,6 @@ def _normalize(value: str) -> str:
     return value.strip().lower()
 
 
-ROLE_FAMILY_COMPATIBILITY = {
-
-    # ========================================================
-    # AI / ML / GENAI
-    # ========================================================
-
-    RoleFamily.AI_ENGINEERING: {
-        RoleFamily.AI_ENGINEERING,
-        RoleFamily.MACHINE_LEARNING,
-        RoleFamily.LLM_GENAI,
-    },
-
-    RoleFamily.MACHINE_LEARNING: {
-        RoleFamily.MACHINE_LEARNING,
-        RoleFamily.AI_ENGINEERING,
-        RoleFamily.LLM_GENAI,
-    },
-
-    RoleFamily.LLM_GENAI: {
-        RoleFamily.LLM_GENAI,
-        RoleFamily.AI_ENGINEERING,
-        RoleFamily.MACHINE_LEARNING,
-    },
-
-    # ========================================================
-    # RESEARCH
-    # ========================================================
-
-    RoleFamily.RESEARCH_ENGINEERING: {
-        RoleFamily.RESEARCH_ENGINEERING,
-        RoleFamily.AI_ENGINEERING,
-        RoleFamily.MACHINE_LEARNING,
-        RoleFamily.LLM_GENAI,
-    },
-
-    # ========================================================
-    # SOFTWARE / BACKEND
-    # ========================================================
-
-    RoleFamily.SOFTWARE_ENGINEERING: {
-        RoleFamily.SOFTWARE_ENGINEERING,
-        RoleFamily.BACKEND_ENGINEERING,
-    },
-
-    RoleFamily.BACKEND_ENGINEERING: {
-        RoleFamily.BACKEND_ENGINEERING,
-        RoleFamily.SOFTWARE_ENGINEERING,
-    },
-
-    # ========================================================
-    # DATA SCIENCE
-    # ========================================================
-
-    RoleFamily.DATA_SCIENCE: {
-        RoleFamily.DATA_SCIENCE,
-    },
-
-    # ========================================================
-    # DATA ENGINEERING
-    # ========================================================
-
-    RoleFamily.DATA_ENGINEERING: {
-        RoleFamily.DATA_ENGINEERING,
-    },
-
-    # ========================================================
-    # DEVOPS / ML PLATFORM
-    # ========================================================
-
-    RoleFamily.DEVOPS_ML_PLATFORM: {
-        RoleFamily.DEVOPS_ML_PLATFORM,
-        RoleFamily.DEVOPS,
-    },
-
-    RoleFamily.DEVOPS: {
-        RoleFamily.DEVOPS,
-        RoleFamily.DEVOPS_ML_PLATFORM,
-    },
-
-    # ========================================================
-    # INTENTIONALLY INCOMPATIBLE
-    # ========================================================
-
-    RoleFamily.MANAGEMENT: set(),
-
-    RoleFamily.PRODUCT: set(),
-
-    RoleFamily.SUPPORT_ENGINEERING: set(),
-
-    RoleFamily.CUSTOMER_ENGINEERING: set(),
-
-    RoleFamily.INTEGRATION_ENGINEERING: set(),
-
-    RoleFamily.RPA_ENGINEERING: set(),
-}
-
 # ============================================================
 # OBVIOUS NON-TARGET ROLES
 # ============================================================
@@ -339,90 +243,69 @@ def is_role_eligible(
 ) -> bool:
     """
     Check whether the job belongs to a role family compatible
-    with at least one primary or secondary candidate role.
+    with at least one candidate role.
 
-    Primary roles are preferred, but secondary roles are also
-    allowed through eligibility so they can reach the scorer.
+    Primary and secondary roles are considered.
+
+    Role compatibility here is intentionally conservative:
+    eligibility only determines whether the role is broadly
+    relevant. Detailed scoring belongs to role_scorer.py.
     """
 
-    preferred_roles = getattr(
-        candidate,
-        "preferred_roles",
-        [],
+    preferred_roles = list(
+        getattr(
+            candidate,
+            "preferred_roles",
+            [],
+        )
+        or []
     )
 
-    secondary_roles = getattr(
-        candidate,
-        "secondary_roles",
-        [],
+    secondary_roles = list(
+        getattr(
+            candidate,
+            "secondary_roles",
+            [],
+        )
+        or []
     )
 
-    # --------------------------------------------------------
-    # No role preferences means don't reject on role.
-    # --------------------------------------------------------
-
+    # No explicit role intent means role is not a hard filter.
     if not preferred_roles and not secondary_roles:
         return True
 
-    # --------------------------------------------------------
-    # Hard reject obvious non-engineering occupations.
-    # --------------------------------------------------------
-
+    # Reject clearly unrelated occupations.
     if is_obvious_non_engineering_role(job):
         return False
 
-    job_family = classify_role(job.title)
-
-    # --------------------------------------------------------
-    # Unknown role remains rejected.
-    #
-    # We currently don't have enough confidence to score it.
-    # --------------------------------------------------------
+    job_family = classify_role(
+        getattr(
+            job,
+            "title",
+            "",
+        )
+    )
 
     if job_family == RoleFamily.UNKNOWN:
-    # Unknown roles are not automatically rejected.
-    # The scoring layer will assign a low/uncertain role score.
-        return True
+        return False
 
-    # --------------------------------------------------------
-    # Check PRIMARY roles first.
-    # --------------------------------------------------------
+    candidate_roles = (
+        preferred_roles
+        + secondary_roles
+    )
 
-    for role in preferred_roles:
+    for role in candidate_roles:
 
-        candidate_family = classify_role(role)
+        candidate_family = classify_role(
+            str(role)
+        )
 
         if candidate_family == RoleFamily.UNKNOWN:
             continue
 
-        compatible_families = ROLE_FAMILY_COMPATIBILITY.get(
-            candidate_family,
-            {candidate_family},
-        )
-
-        if job_family in compatible_families:
-            return True
-
-    # --------------------------------------------------------
-    # Check SECONDARY roles.
-    #
-    # These are valid jobs, but scorer will give them
-    # lower role priority.
-    # --------------------------------------------------------
-
-    for role in secondary_roles:
-
-        candidate_family = classify_role(role)
-
-        if candidate_family == RoleFamily.UNKNOWN:
-            continue
-
-        compatible_families = ROLE_FAMILY_COMPATIBILITY.get(
-            candidate_family,
-            {candidate_family},
-        )
-
-        if job_family in compatible_families:
+        # Eligibility only asks:
+        # "Is this broadly the same role family?"
+        if candidate_family == job_family:
             return True
 
     return False
@@ -464,6 +347,8 @@ def has_work_authorization_restriction(
 
         r"\bu\.s\. citizen\b",
         r"\bus citizen\b",
+        r"\bu\.s\. citizens\b",
+        r"\bus citizens\b",
 
         r"\bu\.s\. citizenship\b",
         r"\bus citizenship\b",

@@ -16,28 +16,41 @@ def _enriched_fields(
     description: str | None,
     retrieval_status: str | None = None,
     title: str = "",
-    use_gemini: bool = False,
 ) -> dict:
+
     enrichment = enrich_job_description(
-    description,
-    title=title,
-    retrieval_status=retrieval_status,
-    use_gemini=False,
+        description,
+        title=title,
+        retrieval_status=retrieval_status,
+        use_ai=False,
     )
 
     return {
-    "description": enrichment.description,
-    "experience_required": enrichment.experience_required,
-    "experience_years_required": enrichment.experience_years_required,
-    "seniority": enrichment.seniority,
-    "role_family": enrichment.role_family,
-    "required_skills": enrichment.required_skills or [],
-    "preferred_skills": enrichment.preferred_skills or [],
-    "description_status": enrichment.description_status,
-    "skills_status": enrichment.skills_status,
-    "experience_status": enrichment.experience_status,
-    "description_length": len(enrichment.description),
-    "gemini_confidence": enrichment.gemini_confidence,
+        "description": enrichment.description,
+        "experience_required": enrichment.experience_required,
+        "experience_years_required": (
+            enrichment.experience_years_required
+        ),
+        "seniority": enrichment.seniority,
+        "role_family": enrichment.role_family,
+        "job_type": enrichment.job_type,
+        "required_skills": (
+            enrichment.required_skills or []
+        ),
+        "preferred_skills": (
+            enrichment.preferred_skills or []
+        ),
+        "description_status": (
+            enrichment.description_status
+        ),
+        "skills_status": enrichment.skills_status,
+        "experience_status": (
+            enrichment.experience_status
+        ),
+        "description_length": (
+            len(enrichment.description)
+        ),
+        "ai_confidence": 0.0,
     }
 
 class UniversalATSRacer:

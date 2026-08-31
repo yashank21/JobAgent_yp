@@ -2,19 +2,16 @@
 Job scoring utilities.
 
 Scores how well a job matches a candidate profile.
-
-Required skills are the primary signal.
-Preferred skills provide additional refinement when present.
 """
 
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
-
 from app.services.skill_normalizer import normalize_skills
 
 
-REQUIRED_WEIGHT = 0.80
-PREFERRED_WEIGHT = 0.20
+def _normalize(value: str) -> str:
+    """Normalize text for case-insensitive matching."""
+    return value.strip().lower()
 
 
 def calculate_skill_score(
@@ -22,28 +19,14 @@ def calculate_skill_score(
     job: Job,
 ) -> float:
     """
-    Calculate skill alignment from 0 to 100.
+    Calculate the candidate's skill match score for a job.
 
-    Rules:
+    Required skills carry more weight than preferred skills.
 
-    1. Required skills are the primary signal.
-    2. Preferred skills provide additional signal when present.
-    3. A job with no preferred skills is NOT penalized.
-    4. A job with no skill requirements receives 0 because
-       there is insufficient evidence to judge skill alignment.
+    Required skills: 70%
+    Preferred skills: 30%
 
-    Examples:
-
-        Required only:
-            10/10 matched -> 100
-
-        Required + preferred:
-            10/10 required + 0/5 preferred
-            -> 80
-
-        Required + preferred:
-            10/10 required + 5/5 preferred
-            -> 100
+    Skill aliases are normalized before comparison.
     """
 
     candidate_skills = normalize_skills(
@@ -58,16 +41,11 @@ def calculate_skill_score(
         job.preferred_skills
     )
 
-    # --------------------------------------------------------
-    # No skill information
-    # --------------------------------------------------------
-
+    # Missing skill lists mean "unknown", not "no overlap".
+    # Groq/rate-limit failures must not crush an otherwise
+    # strong role match.
     if not required_skills and not preferred_skills:
-        return 0.0
-
-    # --------------------------------------------------------
-    # Required skills
-    # --------------------------------------------------------
+        return 50.0
 
     required_score = 0.0
 
@@ -79,11 +57,7 @@ def calculate_skill_score(
         required_score = (
             len(matched_required)
             / len(required_skills)
-        ) * 100.0
-
-    # --------------------------------------------------------
-    # Preferred skills
-    # --------------------------------------------------------
+        )
 
     preferred_score = 0.0
 
@@ -95,35 +69,108 @@ def calculate_skill_score(
         preferred_score = (
             len(matched_preferred)
             / len(preferred_skills)
-        ) * 100.0
-
-    # --------------------------------------------------------
-    # Required skills only
-    #
-    # Do NOT artificially cap these jobs at 80%.
-    # --------------------------------------------------------
-
-    if required_skills and not preferred_skills:
-        return round(
-            required_score,
-            2,
         )
 
-    # --------------------------------------------------------
-    # Preferred skills exist
-    # --------------------------------------------------------
+    return (
+        required_score * 0.7
+        + preferred_score * 0.3
+    ) * 100
 
-    if required_skills:
-        score = (
-            required_score * REQUIRED_WEIGHT
-            + preferred_score * PREFERRED_WEIGHT
-        )
 
-    else:
-        # Job has only preferred skills.
-        score = preferred_score
+def calculate_experience_score(
+    candidate: CandidateProfile,
+    job: Job,
+) -> float:
+    """
+    Score the candidate's experience against the job requirement.
 
-    return round(
-        score,
-        2,
+    Full score when candidate experience meets or exceeds
+    the required experience.
+
+    Partial score when the candidate has some relevant experience.
+    """
+
+    required_experience = getattr(
+        job,
+        "experience_years_required",
+        None,
     )
+
+    if required_experience is None:
+        return 100.0
+
+    if required_experience <= 0:
+        return 100.0
+
+    candidate_experience = candidate.experience_years
+
+    if candidate_experience >= required_experience:
+        return 100.0
+
+    return (
+        candidate_experience
+        / required_experience
+    ) * 100
+
+
+def calculate_role_score(
+    candidate: CandidateProfile,
+    job: Job,
+) -> float:
+    """Score how well the job title matches preferred roles."""
+
+    if not candidate.preferred_roles:
+        return 100.0
+
+    job_title = _normalize(job.title)
+
+    for role in candidate.preferred_roles:
+        if _normalize(role) in job_title:
+            return 100.0
+
+    return 0.0
+
+
+def calculate_location_score(
+    candidate: CandidateProfile,
+    job: Job,
+) -> float:
+    """Score whether the job location matches candidate preferences."""
+
+    if not candidate.preferred_locations:
+        return 100.0
+
+    job_location = _normalize(job.location)
+
+    for location in candidate.preferred_locations:
+        if _normalize(location) in job_location:
+            return 100.0
+
+    return 0.0
+
+
+def calculate_salary_score(
+    candidate: CandidateProfile,
+    job: Job,
+) -> float:
+    """
+    Score whether the job satisfies the candidate's minimum salary.
+
+    If no salary information exists, don't punish the job.
+    """
+
+    minimum_salary = candidate.minimum_salary_lpa
+
+    if minimum_salary <= 0:
+        return 100.0
+
+    if job.salary_max_lpa is None:
+        return 100.0
+
+    if job.salary_max_lpa >= minimum_salary:
+        return 100.0
+
+    return (
+        job.salary_max_lpa
+        / minimum_salary
+    ) * 100

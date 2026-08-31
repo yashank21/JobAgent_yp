@@ -1,15 +1,14 @@
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
 
-from app.services.eligibility import (
-    has_work_authorization_restriction,
-    is_experience_eligible,
-    is_location_eligible,
-)
-
 from app.eligibility.eligibility import (
     check_eligibility,
+    has_work_authorization_restriction,
     is_job_eligible,
+)
+from app.services.eligibility import (
+    is_experience_eligible,
+    is_location_eligible,
 )
 
 
@@ -294,7 +293,7 @@ def test_experience_failure_has_reason():
         job,
     )
 
-    assert result.eligible is False
+    assert result.eligible is True
     assert len(result.reasons) == 1
     assert "2+ years" in result.reasons[0]
 

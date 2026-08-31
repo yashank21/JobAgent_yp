@@ -253,19 +253,10 @@ def _canonical_skill(skill: str) -> str:
 
 
 def _skill_pattern(skill: str) -> re.Pattern:
-    """
-    Build a safe whole-token regex for a skill.
-
-    This prevents things like:
-        java -> javascript
-        go -> google
-        sql -> mysql
-    """
-
     escaped = re.escape(skill.lower())
 
     return re.compile(
-        rf"(?<![\w+#.]){escaped}(?![\w+#.])",
+        rf"(?<![a-zA-Z0-9]){escaped}(?![a-zA-Z0-9])",
         re.IGNORECASE,
     )
 
@@ -386,7 +377,7 @@ def extract_skill_details(
     Ambiguous skills:
         Short/common terms such as AI, ML, API, REST, etc.
 
-    Semantic classification will later be handled by Gemini.
+    Semantic classification will later be handled by AI enrichment layer.
     """
 
     extracted = extract_skills(

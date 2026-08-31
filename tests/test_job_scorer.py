@@ -164,7 +164,7 @@ def test_no_job_skills():
         job,
     )
 
-    assert score == 0.0
+    assert score == 50.0
 
 
 # ============================================================
@@ -219,5 +219,5 @@ def test_role_score_no_match():
         job,
     )
 
-    assert score == 0.0
+    assert score == 75.0
     

@@ -117,4 +117,19 @@ def test_parse_wellfound_job_preserves_explicit_experience_value():
     })
 
     assert job.experience_years_required == 2.0
+
+
+def test_wellfound_urls_follow_user_roles_not_a_hardcoded_ai_path():
+    from app.collectors.wellfound import wellfound_search_urls
+
+    urls = wellfound_search_urls(
+        roles=["Backend Engineer", "Software Engineer"],
+        locations=["India"],
+    )
+
+    assert urls == [
+        "https://wellfound.com/role/l/backend-engineer/india",
+        "https://wellfound.com/role/l/software-engineer/india",
+    ]
+    assert all("ai-engineer" not in url for url in urls)
     

@@ -67,23 +67,26 @@ def explain_role_match(
 ) -> str:
     """Explain role compatibility using role-family classification."""
 
-    if not candidate.preferred_roles:
-        return "✓ No preferred role restriction"
+    preferred = list(candidate.preferred_roles or [])
+    secondary = list(getattr(candidate, "secondary_roles", []) or [])
+    resume_roles = list(candidate.resume_roles or [])
+
+    if not preferred and not secondary and not resume_roles:
+        return "⚠ No role intent or resume roles available"
 
     job_family = classify_role(job.title)
 
-    for role in candidate.preferred_roles:
+    for role in preferred:
+        if classify_role(role) == job_family and job_family != RoleFamily.UNKNOWN:
+            return f"✓ Role matches preferred role: {role}"
 
-        candidate_family = classify_role(role)
+    for role in secondary:
+        if classify_role(role) == job_family and job_family != RoleFamily.UNKNOWN:
+            return f"✓ Role matches secondary target: {role}"
 
-        if (
-            candidate_family != RoleFamily.UNKNOWN
-            and candidate_family == job_family
-        ):
-            return (
-                f"✓ Role matches preferred role: "
-                f"{role}"
-            )
+    for role in resume_roles:
+        if classify_role(role) == job_family and job_family != RoleFamily.UNKNOWN:
+            return f"✓ Role matches resume evidence: {role}"
 
     return "✗ Job title does not match preferred roles"
 

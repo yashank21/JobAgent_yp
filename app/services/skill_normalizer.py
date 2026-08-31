@@ -21,6 +21,7 @@ SKILL_ALIASES = {
     "retrieval augmented generation (rag)": "retrieval-augmented generation",
     "retrieval-augmented generation (rag)": "retrieval-augmented generation",
     "rag (retrieval-augmented generation)": "retrieval-augmented generation",
+    "retrieval augmented generation": "retrieval-augmented generation",
 
     "llm": "large language models",
     "llms": "large language models",

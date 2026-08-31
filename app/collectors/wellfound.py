@@ -22,6 +22,54 @@ from app.services.seniority_parser import parse_seniority
 logger = logging.getLogger(__name__)
 
 
+def wellfound_search_urls(
+    roles: list[str] | None = None,
+    locations: list[str] | None = None,
+) -> list[str]:
+    """
+    Build Wellfound search URLs from this user's preferences.
+
+    Does not assume a specific candidate or role.
+    """
+
+    location_slug = "india"
+
+    for location in locations or []:
+        normalized = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            location.strip().lower(),
+        ).strip("-")
+
+        if normalized in {"india", "bengaluru", "bangalore"}:
+            location_slug = "india"
+            break
+
+        if normalized:
+            location_slug = normalized
+            break
+
+    slugs: list[str] = []
+
+    for role in roles or []:
+        slug = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            role.strip().lower(),
+        ).strip("-")
+
+        if slug and slug not in slugs:
+            slugs.append(slug)
+
+    if not slugs:
+        slugs = ["software-engineer"]
+
+    return [
+        f"https://wellfound.com/role/l/{slug}/{location_slug}"
+        for slug in slugs
+    ]
+
+
 class WellfoundCollector:
 
     BASE_URL = "https://wellfound.com"
@@ -34,7 +82,7 @@ class WellfoundCollector:
         self.http_client = http_client
 
         self.urls = urls or [
-            "https://wellfound.com/role/l/ai-engineer/india",
+            "https://wellfound.com/role/l/software-engineer/india",
         ]
 
     # ---------------------------------------------------------
@@ -1092,7 +1140,7 @@ class WellfoundCollector:
             )
         )
 
-        # Gemini enrichment is optional.
+        # Groq enrichment is optional.
         # Collection must never depend on AI quota availability.
         description = raw_description
 
@@ -1143,7 +1191,7 @@ class WellfoundCollector:
         # NOT automatically treated as required.
         #
         # Semantic classification of description-level skills
-        # will be handled later by the Gemini enrichment layer.
+        # will be handled later by the Groq enrichment layer.
 
         required_skills = extract_skills(
             required_skills_text
@@ -1161,7 +1209,7 @@ class WellfoundCollector:
         # Seniority
         #
         # Experience is parsed deterministically.
-        # Gemini enrichment is not required.
+        # Groq enrichment is not required.
         # -----------------------------------------------------
 
         experience_years = raw_job.get(
@@ -1174,6 +1222,11 @@ class WellfoundCollector:
                     "experience_required",
                     "",
                 )
+            )
+
+        if experience_years is None:
+            experience_years = parse_experience_years(
+                description
             )
 
         seniority = parse_seniority(

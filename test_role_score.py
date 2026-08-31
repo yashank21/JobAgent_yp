@@ -1,4 +1,4 @@
-from app.config.candidate_profile import CANDIDATE_PROFILE
+from app.models.candidate import CandidateProfile
 from app.models.job import Job
 from app.scoring.role_scorer import calculate_role_score
 
@@ -17,20 +17,19 @@ jobs = [
 ]
 
 
-for title, role, seniority in jobs:
-    job = Job(
-        id="test",
-        company="Test",
-        title=title,
-        role_family=role,
-        seniority=seniority,
+if __name__ == "__main__":
+    candidate = CandidateProfile(
+        preferred_roles=["AI Engineer"],
     )
 
-    score = calculate_role_score(
-        CANDIDATE_PROFILE,
-        job,
-    )
+    for title, role, seniority in jobs:
+        job = Job(
+            id="test",
+            company="Test",
+            title=title,
+            role_family=role,
+            seniority=seniority,
+        )
 
-    print(
-        f"{title:<30} -> {score:.2f}"
-    )
+        score = calculate_role_score(candidate, job)
+        print(f"{title:<30} -> {score:.2f}")

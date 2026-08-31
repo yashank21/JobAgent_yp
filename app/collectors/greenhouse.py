@@ -109,7 +109,7 @@ class GreenhouseCollector(BaseCollector):
 
     preferred_skills=enrichment.preferred_skills or [],
 
-    gemini_confidence=enrichment.gemini_confidence,
+    ai_confidence=enrichment.ai_confidence,
 
     description_status=enrichment.description_status,
     skills_status=enrichment.skills_status,

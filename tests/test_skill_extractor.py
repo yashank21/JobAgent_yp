@@ -58,7 +58,7 @@ def test_custom_skill_vocabulary():
         skills={"rust", "golang"},
     )
 
-    assert result == ["golang", "rust"]
+    assert result == ["go", "rust"]
     
 def test_extract_specialized_technical_skills():
 

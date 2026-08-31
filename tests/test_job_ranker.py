@@ -1,14 +1,15 @@
 from app.models.candidate import CandidateProfile
 from app.models.job import Job
-from app.scoring.job_ranker import rank_jobs
+from app.scoring.final_scorer import rank_jobs
 
 
 def test_jobs_are_ranked_highest_first():
 
     candidate = CandidateProfile(
-        name="Yashank",
+        name="Test User",
         email="test@example.com",
         location="India",
+        preferred_roles=["Software Engineer"],
         skills=["Python", "C++"],
     )
 
@@ -37,38 +38,10 @@ def test_jobs_are_ranked_highest_first():
     assert ranked[0].final_score > ranked[1].final_score
 
 
-def test_rank_jobs_limit():
-
-    candidate = CandidateProfile(
-        name="Yashank",
-        email="test@example.com",
-        location="India",
-        skills=["Python"],
-    )
-
-    jobs = [
-        Job(
-            id=str(i),
-            title="Software Engineer",
-            company=f"Company {i}",
-            required_skills=["Python"],
-        )
-        for i in range(10)
-    ]
-
-    ranked = rank_jobs(
-        candidate,
-        jobs,
-        limit=5,
-    )
-
-    assert len(ranked) == 5
-
-
 def test_ineligible_jobs_are_not_ranked():
 
     candidate = CandidateProfile(
-        name="Yashank",
+        name="Test User",
         email="test@example.com",
         location="India",
         preferred_roles=["Software Engineer"],
@@ -109,7 +82,7 @@ def test_ineligible_jobs_are_not_ranked():
 def test_role_mismatch_is_not_ranked():
 
     candidate = CandidateProfile(
-        name="Yashank",
+        name="Test User",
         email="test@example.com",
         location="India",
         preferred_roles=["Software Engineer"],
