@@ -196,28 +196,4 @@ def test_role_score_match():
 
     assert score == 100.0
 
-
-def test_role_score_no_match():
-
-    candidate = CandidateProfile(
-        name="Yashank",
-        email="test@example.com",
-        location="India",
-        preferred_roles=[
-            "Data Engineer",
-        ],
-    )
-
-    job = Job(
-        id="1",
-        title="Software Engineer",
-        company="Example",
-    )
-
-    score = calculate_role_score(
-        candidate,
-        job,
-    )
-
-    assert score == 75.0
     

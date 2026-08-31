@@ -27,7 +27,7 @@ from app.collectors.wellfound import (
     wellfound_search_urls,
 )
 from app.email.email_service import EmailService
-from app.scoring.job_ranker import rank_jobs
+from app.scoring.final_scorer import rank_jobs
 from app.scoring.explanation import explain_match
 from app.services.http_client import HTTPClient
 from app.services.job_filter import filter_recent_jobs

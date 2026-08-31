@@ -232,9 +232,12 @@ def score_job(
 def rank_jobs(
     candidate: CandidateProfile,
     jobs: list[Job],
+    limit: int | None = None,
 ) -> list[JobMatch]:
     """
     Score and rank eligible jobs from highest to lowest.
+
+    If limit is provided, return only the top N eligible matches.
     """
 
     matches = [
@@ -251,8 +254,13 @@ def rank_jobs(
         if match.eligible
     ]
 
-    return sorted(
+    ranked_matches = sorted(
         eligible_matches,
         key=lambda match: match.final_score,
         reverse=True,
     )
+
+    if limit is not None:
+        return ranked_matches[:limit]
+
+    return ranked_matches
