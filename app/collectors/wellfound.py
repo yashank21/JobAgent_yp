@@ -9,10 +9,12 @@ import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from playwright.async_api import async_playwright
 
 from app.models.job import Job
+from app.scoring.role_normalizer import RoleFamily, classify_role
 from app.services.date_parser import parse_wellfound_date
 from app.services.experience_parser import parse_experience_years
 from app.services.skill_extractor import extract_skills
@@ -20,6 +22,97 @@ from app.services.seniority_parser import parse_seniority
 
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# WELLFOUND ROLE FAMILY → SLUG MAPPING
+# ============================================================
+#
+# This is the single source of truth for mapping canonical
+# RoleFamily values to valid Wellfound /role/l/<slug>/ slugs.
+#
+# Architecture:
+#
+#   candidate role string
+#       ↓  classify_role()
+#   RoleFamily (canonical, extensible)
+#       ↓  _WELLFOUND_FAMILY_SLUGS
+#   valid Wellfound URL slug
+#
+# When a RoleFamily has no known Wellfound slug, the system
+# skips URL generation rather than guessing.
+#
+# To add support for a new role category:
+#   1. Ensure the role classifies to the correct RoleFamily
+#   2. Add a single entry here mapping that family to a slug
+#
+# Mechanical slugification is never used — it produces invalid
+# slugs (e.g. "ai/ml engineer" → "ai-ml-engineer" redirects
+# to /location/india).
+# ============================================================
+
+_WELLFOUND_FAMILY_SLUGS: dict[RoleFamily, str] = {
+    # AI / ML
+    RoleFamily.AI_ENGINEERING: "ai-engineer",
+    RoleFamily.MACHINE_LEARNING: "machine-learning-engineer",
+    RoleFamily.LLM_GENAI: "ai-engineer",
+    RoleFamily.FORWARD_DEPLOYED: "ai-engineer",
+
+    # Software Engineering
+    RoleFamily.SOFTWARE_ENGINEERING: "software-engineer",
+    RoleFamily.BACKEND_ENGINEERING: "backend-engineer",
+    RoleFamily.FRONTEND_ENGINEERING: "frontend-engineer",
+
+    # Data
+    RoleFamily.DATA_SCIENCE: "data-scientist",
+    RoleFamily.DATA_ENGINEERING: "data-engineer",
+
+    # Platform / DevOps
+    RoleFamily.DEVOPS_ML_PLATFORM: "mlops-engineer",
+    RoleFamily.DEVOPS: "devops-engineer",
+
+    # Specialized
+    RoleFamily.RESEARCH_ENGINEERING: "research-engineer",
+    RoleFamily.MOBILE_ENGINEERING: "mobile-engineer",
+
+    # Management
+    RoleFamily.MANAGEMENT: "engineering-manager",
+    RoleFamily.PRODUCT: "product-manager",
+}
+
+
+def _wellfound_role_slug(role: str) -> str | None:
+    """
+    Map a candidate-facing role name to a valid Wellfound slug.
+
+    Pipeline:
+        role string → classify_role() → RoleFamily → slug
+
+    Returns None when the role does not classify to a family
+    with a known Wellfound slug.
+    """
+
+    family = classify_role(role)
+
+    if family == RoleFamily.UNKNOWN:
+        logger.debug(
+            "Role '%s' classified as UNKNOWN — "
+            "no Wellfound slug available",
+            role,
+        )
+        return None
+
+    slug = _WELLFOUND_FAMILY_SLUGS.get(family)
+
+    if slug is None:
+        logger.debug(
+            "RoleFamily '%s' has no known Wellfound slug — "
+            "skipping '%s'",
+            family.value,
+            role,
+        )
+
+    return slug
 
 
 def wellfound_search_urls(
@@ -52,13 +145,16 @@ def wellfound_search_urls(
     slugs: list[str] = []
 
     for role in roles or []:
-        slug = re.sub(
-            r"[^a-z0-9]+",
-            "-",
-            role.strip().lower(),
-        ).strip("-")
+        slug = _wellfound_role_slug(role)
 
-        if slug and slug not in slugs:
+        if slug is None:
+            logger.warning(
+                "No known Wellfound slug for role '%s' — skipping",
+                role,
+            )
+            continue
+
+        if slug not in slugs:
             slugs.append(slug)
 
     if not slugs:
@@ -524,6 +620,36 @@ class WellfoundCollector:
         return self._clean_text(result)
 
     # ---------------------------------------------------------
+    # Fast ID extraction (no detail page visit)
+    # ---------------------------------------------------------
+
+    async def _extract_link_job_id(self, link) -> str:
+        """
+        Extract the Wellfound job ID from a search-card link
+        without navigating to the detail page.
+
+        Returns the numeric ID string, or a stable hash-based
+        fallback when the URL does not contain a numeric ID.
+        """
+
+        href = await link.get_attribute("href")
+
+        if not href or "/jobs/" not in href:
+            return ""
+
+        match = re.search(r"/jobs/(\d+)", href)
+
+        if match:
+            return match.group(1)
+
+        absolute = self._absolute_url(href)
+
+        import hashlib
+
+        digest = hashlib.sha256(absolute.encode("utf-8")).hexdigest()
+        return f"wf-{digest}"
+
+    # ---------------------------------------------------------
     # Job extraction
     # ---------------------------------------------------------
 
@@ -797,6 +923,7 @@ class WellfoundCollector:
     page,
     url: str,
     reference_time: datetime,
+    cross_url_seen_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
 
         await page.set_extra_http_headers(
@@ -824,11 +951,48 @@ class WellfoundCollector:
         await page.wait_for_timeout(4000)
 
         # ---------------------------------------------------------
-        # Discover pagination
+        # Redirect guard: detect role-search degradation
+        #
+        # When a role URL like /role/l/ai-ml-engineer/india
+        # redirects to /location/india, the page contains generic
+        # India job listings — not results for the requested role.
+        #
+        # We detect this by comparing the resolved URL path against
+        # the requested URL path.  A role search that resolves to a
+        # bare location page is materially different.
         # ---------------------------------------------------------
 
-        import re
-        from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+        resolved_path = urlparse(page.url).path
+        requested_path = urlparse(url).path
+
+        _REDIRECT_DEGRADATION_PATTERNS = [
+            "/location/",
+        ]
+
+        for pattern in _REDIRECT_DEGRADATION_PATTERNS:
+            if (
+                pattern in resolved_path
+                and pattern not in requested_path
+            ):
+                logger.warning(
+                    "Wellfound role URL redirected to generic "
+                    "location page: requested=%s resolved=%s — "
+                    "skipping",
+                    url,
+                    page.url,
+                )
+
+                print(
+                    f"DIAG-REDIRECT: SKIPPING role URL "
+                    f"that resolved to generic page: "
+                    f"requested={url} resolved={page.url}"
+                )
+
+                return []
+
+        # ---------------------------------------------------------
+        # Discover pagination
+        # ---------------------------------------------------------
 
         page_numbers = set()
 
@@ -953,6 +1117,9 @@ class WellfoundCollector:
         seen_ids = set()
         seen_job_urls = set()
 
+        # Diagnostic: store page 1 normalized URLs for comparison
+        _page1_urls = None
+
         detail_page = await page.context.new_page()
 
         try:
@@ -975,7 +1142,21 @@ class WellfoundCollector:
                         f"\nWELLFOUND PAGE {page_number}/{len(pagination_urls)}"
                     )
 
-                    # Page 1 is already loaded, so don't reload it.
+                    # -------------------------------------------------
+                    # DIAGNOSTIC: requested URL
+                    # -------------------------------------------------
+
+                    print(
+                        f"DIAG-REQ: page={page_number} "
+                        f"requested_url={page_url}"
+                    )
+
+                    # -------------------------------------------------
+                    # Navigate (page 1 is already loaded)
+                    # -------------------------------------------------
+
+                    _response_status = "N/A (page 1, no goto)"
+
                     if page_number > 1:
 
                         response = await page.goto(
@@ -984,7 +1165,15 @@ class WellfoundCollector:
                             timeout=30000,
                         )
 
+                        _response_status = (
+                            response.status if response else "no response"
+                        )
+
                         if response and response.status != 200:
+                            print(
+                                f"DIAG-HTTP: page={page_number} "
+                                f"status={response.status} SKIPPING"
+                            )
                             logger.warning(
                                 "Page %d returned HTTP %s",
                                 page_number,
@@ -992,21 +1181,190 @@ class WellfoundCollector:
                             )
                             continue
 
-                        await page.wait_for_timeout(3000)
+                        # -------------------------------------------------
+                        # Wait for job-link DOM to actually appear
+                        # before querying.  This avoids the hydration
+                        # race where query_selector_all reads stale
+                        # DOM from the previous page.
+                        # -------------------------------------------------
+
+                        try:
+                            await page.wait_for_selector(
+                                "a[href*='/jobs/']",
+                                timeout=10000,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Page %d: timed out waiting for "
+                                "job-link selector, proceeding "
+                                "with current DOM",
+                                page_number,
+                            )
+
+                    # -------------------------------------------------
+                    # DIAGNOSTIC: actual URL + HTTP status
+                    # -------------------------------------------------
+
+                    print(
+                        f"DIAG-NAV: page={page_number} "
+                        f"actual_url={page.url} "
+                        f"http_status={_response_status}"
+                    )
+
+                    # -------------------------------------------------
+                    # Collect job links
+                    # -------------------------------------------------
 
                     links = await page.query_selector_all(
                         "a[href*='/jobs/']"
                     )
 
                     print(
-                        f"WELLFOUND JOB LINKS PAGE {page_number}: {len(links)}"
+                        f"DIAG-LINKS: page={page_number} "
+                        f"raw_link_count={len(links)}"
                     )
 
-                    logger.info(
-                        "Found %d Wellfound job links on page %d",
-                        len(links),
-                        page_number,
+                    # -------------------------------------------------
+                    # DIAGNOSTIC: normalize all hrefs and print first 10
+                    # -------------------------------------------------
+
+                    _normalized = []
+
+                    for _link in links:
+
+                        try:
+                            _href = await _link.get_attribute(
+                                "href"
+                            )
+
+                            if not _href:
+                                continue
+
+                            _norm = (
+                                _href
+                                if _href.startswith("http")
+                                else f"https://wellfound.com{_href}"
+                            )
+
+                            _normalized.append(_norm)
+
+                        except Exception:
+                            pass
+
+                    print(
+                        f"DIAG-HREFS: page={page_number} "
+                        f"normalized_count={len(_normalized)}"
                     )
+
+                    for _i, _u in enumerate(_normalized[:10]):
+                        print(f"  [{_i+1}] {_u}")
+
+                    if len(_normalized) > 10:
+                        print(
+                            f"  ... +{len(_normalized) - 10} more"
+                        )
+
+                    # -------------------------------------------------
+                    # DIAGNOSTIC: page 1 vs page 2 comparison
+                    # -------------------------------------------------
+
+                    if page_number == 1:
+                        _page1_urls = list(_normalized)
+
+                        print(
+                            f"DIAG-PAGE1: stored {len(_page1_urls)} "
+                            f"URLs for comparison"
+                        )
+
+                    elif page_number == 2 and _page1_urls is not None:
+
+                        _p1_set = set(_page1_urls)
+                        _p2_set = set(_normalized)
+                        _overlap = _p1_set & _p2_set
+                        _pct = (
+                            (len(_overlap) / len(_p2_set) * 100)
+                            if _p2_set
+                            else 0
+                        )
+
+                        print(
+                            f"DIAG-COMPARE: page1_unique="
+                            f"{len(_p1_set)} "
+                            f"page2_unique={len(_p2_set)} "
+                            f"overlap={len(_overlap)} "
+                            f"overlap_pct={_pct:.1f}%"
+                        )
+
+                        if _p2_set - _p1_set:
+                            print(
+                                f"DIAG-COMPARE: page2-only URLs "
+                                f"({len(_p2_set - _p1_set)}):"
+                            )
+                            for _u in sorted(_p2_set - _p1_set):
+                                print(f"  {_u}")
+                        else:
+                            print(
+                                f"DIAG-COMPARE: page2 has ZERO "
+                                f"new URLs not in page1"
+                            )
+
+                        if _p1_set - _p2_set:
+                            print(
+                                f"DIAG-COMPARE: page1-only URLs "
+                                f"({len(_p1_set - _p2_set)}):"
+                            )
+                            for _u in sorted(_p1_set - _p2_set):
+                                print(f"  {_u}")
+
+                    # -------------------------------------------------
+                    # Early termination: scan for new job URLs
+                    # before the expensive extraction loop.
+                    #
+                    # If every job URL on this page is already in
+                    # seen_job_urls, subsequent pages will also be
+                    # duplicates — stop pagination.
+                    # -------------------------------------------------
+
+                    new_url_count = 0
+
+                    for link in links:
+
+                        try:
+                            href = await link.get_attribute(
+                                "href"
+                            )
+
+                            if not href:
+                                continue
+
+                            job_url = (
+                                href
+                                if href.startswith("http")
+                                else f"https://wellfound.com{href}"
+                            )
+
+                            if job_url not in seen_job_urls:
+                                new_url_count += 1
+                                break
+
+                        except Exception:
+                            continue
+
+                    print(
+                        f"DIAG-TERMINATE: page={page_number} "
+                        f"new_url_count={new_url_count} "
+                        f"seen_job_urls_size={len(seen_job_urls)}"
+                    )
+
+                    if new_url_count == 0 and page_number > 1:
+
+                        logger.info(
+                            "No new job links on page %d — "
+                            "stopping Wellfound pagination early",
+                            page_number,
+                        )
+
+                        break
 
                     # -------------------------------------------------
                     # Extract individual jobs
@@ -1031,6 +1389,26 @@ class WellfoundCollector:
                                 continue
 
                             seen_job_urls.add(job_url)
+
+                            # -------------------------------------------------
+                            # Skip jobs already collected from a
+                            # previous role search URL.
+                            #
+                            # This avoids the expensive detail-page
+                            # visit (network + DOM extraction) for
+                            # duplicates across role searches.
+                            # -------------------------------------------------
+
+                            if cross_url_seen_ids is not None:
+
+                                link_job_id = (
+                                    await self._extract_link_job_id(
+                                        link
+                                    )
+                                )
+
+                                if link_job_id and link_job_id in cross_url_seen_ids:
+                                    continue
 
                             job = await self._extract_job_from_link(
                                 detail_page,
@@ -1068,6 +1446,14 @@ class WellfoundCollector:
         finally:
 
             await detail_page.close()
+
+        print(
+            f"\nDIAG: Pagination complete. "
+            f"Pages processed: up to {page_number}/{len(pagination_urls)}. "
+            f"Total jobs: {len(jobs)}. "
+            f"seen_job_urls size: {len(seen_job_urls)}. "
+            f"seen_ids size: {len(seen_ids)}."
+        )
 
         print(
             f"\nWELLFOUND TOTAL JOBS: {len(jobs)}"
@@ -1350,6 +1736,7 @@ class WellfoundCollector:
                         page,
                         url,
                         reference_time,
+                        cross_url_seen_ids=seen_job_ids,
                     )
 
                     for raw_job in raw_jobs:

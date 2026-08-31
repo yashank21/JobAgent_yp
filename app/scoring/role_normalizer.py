@@ -242,6 +242,37 @@ ROLE_PATTERNS = {
     ],
 
     # ========================================================
+    # AI ENGINEERING
+    #
+    # Checked before MACHINE_LEARNING because "ai/ml engineer"
+    # and "ai ml engineer" must classify as AI_ENGINEERING
+    # (Wellfound slug: ai-engineer), not MACHINE_LEARNING.
+    # ========================================================
+
+    RoleFamily.AI_ENGINEERING: [
+        r"\bai engineer\b",
+        r"\bai engineering\b",
+        r"\bartificial intelligence engineer\b",
+        r"\bartificial intelligence engineering\b",
+        r"\bapplied ai engineer\b",
+        r"\bapplied artificial intelligence engineer\b",
+        r"\bai applications engineer\b",
+        r"\bai application engineer\b",
+        r"\bai software engineer\b",
+
+        # ai/ml and ai ml variants — these are AI roles that
+        # Wellfound resolves to the ai-engineer slug.
+        r"\bai/ml\s+engineer\b",
+        r"\bai\s+ml\s+engineer\b",
+
+        # Software Engineer + AI
+        r"\bsoftware engineer.*artificial intelligence\b",
+        # Software Engineer + explicit AI specialization
+        r"\bsoftware engineer\s*(?:,|-)\s*ai\b",
+        r"\bsoftware engineer\s*(?:,|-)\s*artificial intelligence\b",
+    ],
+
+    # ========================================================
     # MACHINE LEARNING
     # ========================================================
 
@@ -251,8 +282,6 @@ ROLE_PATTERNS = {
         r"\bml engineer\b",
         r"\bml engineering\b",
         r"\bmle\b",
-        r"\bai/ml engineer\b",
-        r"\bai ml engineer\b",
         r"\bapplied ml engineer\b",
         r"\bapplied machine learning engineer\b",
         r"\bdeep learning engineer\b",
@@ -267,28 +296,6 @@ ROLE_PATTERNS = {
 
         r"\bmachine learning\b",
         r"\bdeep learning\b",
-    ],
-
-    # ========================================================
-    # AI ENGINEERING
-    # ========================================================
-
-    RoleFamily.AI_ENGINEERING: [
-        r"\bai engineer\b",
-        r"\bai engineering\b",
-        r"\bartificial intelligence engineer\b",
-        r"\bartificial intelligence engineering\b",
-        r"\bapplied ai engineer\b",
-        r"\bapplied artificial intelligence engineer\b",
-        r"\bai applications engineer\b",
-        r"\bai application engineer\b",
-        r"\bai software engineer\b",
-
-        # Software Engineer + AI
-        r"\bsoftware engineer.*artificial intelligence\b",
-        # Software Engineer + explicit AI specialization
-        r"\bsoftware engineer\s*(?:,|-)\s*ai\b",
-        r"\bsoftware engineer\s*(?:,|-)\s*artificial intelligence\b",
     ],
 
     # ========================================================

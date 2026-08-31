@@ -170,7 +170,7 @@ def test_machine_learning_engineer():
 def test_ai_ml_engineer():
     assert classify_role(
         "AI/ML Engineer"
-    ) == RoleFamily.MACHINE_LEARNING
+    ) == RoleFamily.AI_ENGINEERING
 
 
 def test_forward_deployed_engineer():
@@ -205,7 +205,7 @@ def test_ml_platform_engineer():
 def test_software_engineer_ai_ml_is_not_generic_software():
     assert classify_role(
         "Software Engineer, AI/ML"
-    ) == RoleFamily.MACHINE_LEARNING
+    ) == RoleFamily.AI_ENGINEERING
 
 
 def test_software_engineer_generative_ai_is_not_generic_software():
