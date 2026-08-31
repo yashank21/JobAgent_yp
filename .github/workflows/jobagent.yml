@@ -47,4 +47,4 @@ jobs:
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
         run: |
           python -c "from playwright.async_api import async_playwright; print('Final Playwright check: OK')"
-          python run_jobagent.py
+          python run_jobagent.py --resume resume/Yashank_Patidar_resume_NITK.pdf --non-interactive

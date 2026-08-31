@@ -53,6 +53,17 @@ def parse_args():
         help="Path to the user's resume PDF or DOCX",
     )
 
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        default=False,
+        help=(
+            "Run without interactive prompts. "
+            "Resume-derived roles are used as preferred roles. "
+            "Intended for CI / scheduled execution."
+        ),
+    )
+
     return parser.parse_args()
 
 
@@ -113,7 +124,32 @@ def collect_explicit_preferences(
     return profile
 
 
-def main(resume_path: str) -> None:
+def apply_default_preferences(
+    profile: CandidateProfile,
+) -> CandidateProfile:
+    """
+    Non-interactive equivalent of collect_explicit_preferences.
+
+    Uses resume-derived roles as preferred roles when available.
+    No input() calls — safe for CI / headless execution.
+    """
+
+    if profile.resume_roles:
+        profile.preferred_roles = list(profile.resume_roles)
+    else:
+        print(
+            "No roles found on the resume. "
+            "Role ranking will be weak."
+        )
+
+    return profile
+
+
+def main(
+    resume_path: str,
+    *,
+    non_interactive: bool = False,
+) -> None:
     client = HTTPClient()
 
     print("\nLoading candidate resume...")
@@ -141,9 +177,14 @@ def main(resume_path: str) -> None:
         for role in candidate_profile.resume_roles:
             print(f"  - {role}")
 
-    candidate_profile = collect_explicit_preferences(
-        candidate_profile,
-    )
+    if non_interactive:
+        candidate_profile = apply_default_preferences(
+            candidate_profile,
+        )
+    else:
+        candidate_profile = collect_explicit_preferences(
+            candidate_profile,
+        )
 
     print("\nUsing profile intent:")
     print(f"  Primary roles: {candidate_profile.preferred_roles}")
@@ -281,4 +322,4 @@ def main(resume_path: str) -> None:
 
 if __name__ == "__main__":
     args = parse_args()
-    main(args.resume)
+    main(args.resume, non_interactive=args.non_interactive)
