@@ -1,5 +1,6 @@
 name: JobAgent Daily Digest
 
+# Daily digest at 9:00 AM IST
 on:
   schedule:
     - cron: "30 3 * * *"
