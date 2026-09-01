@@ -10,16 +10,10 @@ Rate limits stop further Groq calls; remaining jobs use
 deterministic extraction only.
 """
 
-from app.services.job_enrichment import enrich_job_description
-
-
-def _is_rate_limit_error(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return (
-        "429" in text
-        or "rate_limit" in text
-        or "rate limit" in text
-    )
+from app.services.job_enrichment import (
+    _is_rate_limit_error,
+    enrich_job_description,
+)
 
 
 def _apply_enrichment(job, enrichment) -> None:
@@ -54,6 +48,12 @@ def enrich_recent_jobs_with_groq(
     enriched_jobs = []
     use_ai = True
 
+    # ---- counters ------------------------------------------------
+    groq_attempted = 0
+    groq_successful = 0
+    groq_failed = 0
+    deterministic_fallback = 0
+
     jobs_with_descriptions = [
         job
         for job in jobs
@@ -62,6 +62,8 @@ def enrich_recent_jobs_with_groq(
             and getattr(job, "description", "").strip()
         )
     ]
+
+    skipped = len(jobs) - len(jobs_with_descriptions)
 
     print(
         f"\nRunning Groq enrichment on "
@@ -83,8 +85,21 @@ def enrich_recent_jobs_with_groq(
             )
             _apply_enrichment(job, enrichment)
 
+            if use_ai:
+                groq_attempted += 1
+                if enrichment.groq_succeeded:
+                    groq_successful += 1
+                else:
+                    groq_failed += 1
+            else:
+                deterministic_fallback += 1
+
         except Exception as exc:
+            if use_ai:
+                groq_attempted += 1
+
             if use_ai and _is_rate_limit_error(exc):
+                groq_failed += 1
                 use_ai = False
                 print(
                     "\nGroq daily token limit reached. "
@@ -99,6 +114,7 @@ def enrich_recent_jobs_with_groq(
                     use_ai=False,
                 )
                 _apply_enrichment(job, enrichment)
+                deterministic_fallback += 1
             except Exception as fallback_exc:
                 print(
                     f"[enrichment] failed for "
@@ -106,16 +122,6 @@ def enrich_recent_jobs_with_groq(
                     f"{getattr(job, 'title', '')}: "
                     f"{type(fallback_exc).__name__}: {fallback_exc}"
                 )
-
-        if (
-            index % 5 == 0
-            or index == len(jobs_with_descriptions)
-        ):
-            mode = "Groq" if use_ai else "deterministic"
-            print(
-                f"  {mode} enrichment: "
-                f"{index}/{len(jobs_with_descriptions)}"
-            )
 
         enriched_jobs.append(job)
 
@@ -129,5 +135,15 @@ def enrich_recent_jobs_with_groq(
     ]
 
     enriched_jobs.extend(jobs_without_descriptions)
+
+    # ---- summary -------------------------------------------------
+    total = len(jobs)
+    print(f"\nEnrichment summary:")
+    print(f"  Jobs processed:          {len(jobs_with_descriptions):,}")
+    print(f"  Groq attempted:          {groq_attempted:,}")
+    print(f"  Groq successful:         {groq_successful:,}")
+    print(f"  Groq failed:             {groq_failed:,}")
+    print(f"  Deterministic fallback:  {deterministic_fallback:,}")
+    print(f"  Skipped (no description):{skipped:,}")
 
     return enriched_jobs

@@ -41,6 +41,9 @@ class EnrichedJobDescription:
     # Current generic AI confidence.
     ai_confidence: float = 0.0
 
+    # Whether Groq API actually returned a result for this job.
+    groq_succeeded: bool = False
+
 
 def description_from_response(response: object) -> str:
     """Extract a textual JD from common HTML or JSON responses."""
@@ -168,27 +171,47 @@ def _merge_skills(
     return sorted(normalized)
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Check whether an exception represents a Groq rate-limit (429)."""
+    text = str(exc).lower()
+    return (
+        "429" in text
+        or "rate_limit" in text
+        or "rate limit" in text
+    )
+
+
 def _try_ai_enrichment(
     *,
     title: str,
     description: str,
 ) -> dict:
     """
-    Run Groq enrichment safely.
+    Run Groq enrichment.
 
-    AI enrichment is optional. Any failure returns an empty
-    result and must never break job collection.
+    Rate-limit (429) exceptions are re-raised so the caller
+    can disable Groq for the remainder of the run.
+
+    All other failures return an empty fallback result and
+    must never break job collection.
     """
 
     try:
         enricher = GroqJobEnricher()
 
-        return enricher.analyze(
+        result = enricher.analyze(
             title=title,
             description=description,
         )
 
+        result["_groq_succeeded"] = True
+
+        return result
+
     except Exception as exc:
+        if _is_rate_limit_error(exc):
+            raise
+
         print(
             f"[Groq] enrichment failed: "
             f"{type(exc).__name__}: {exc}"
@@ -202,6 +225,7 @@ def _try_ai_enrichment(
             "role_family": "Other",
             "job_type": None,
             "confidence": 0.0,
+            "_groq_succeeded": False,
         }
 
 
@@ -315,12 +339,14 @@ def enrich_job_description(
     # -------------------------------------------------
 
     ai_result = {}
+    groq_ok = False
 
     if use_ai:
         ai_result = _try_ai_enrichment(
             title=title,
             description=cleaned,
         )
+        groq_ok = ai_result.get("_groq_succeeded", False)
 
     groq_required = list(
         normalize_skills(
@@ -346,17 +372,6 @@ def enrich_job_description(
             0.0,
         )
         or 0.0
-    )
-
-    groq_has_semantic_result = any(
-        [
-            ai_result.get("required_skills"),
-            ai_result.get("preferred_skills"),
-            ai_result.get("experience_years") is not None,
-            ai_result.get("seniority"),
-            ai_result.get("role_family"),
-            ai_result.get("job_type"),
-        ]
     )
 
     # -------------------------------------------------
@@ -453,7 +468,7 @@ def enrich_job_description(
             else EXPERIENCE_NONE_FOUND
         ),
 
-
-        # Compatibility with the existing Job model/scoring.
         ai_confidence=confidence,
+
+        groq_succeeded=groq_ok,
     )

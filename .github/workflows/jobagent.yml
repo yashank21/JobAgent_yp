@@ -6,6 +6,15 @@ on:
     - cron: "30 3 * * *"
 
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Execution mode"
+        required: false
+        default: "refresh"
+        type: choice
+        options:
+          - refresh
+          - cache_only
 
 jobs:
   run-jobagent:
@@ -46,6 +55,7 @@ jobs:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           python -c "from playwright.async_api import async_playwright; print('Final Playwright check: OK')"
-          python run_jobagent.py --resume resume/Yashank_Patidar_resume_NITK.pdf --non-interactive
+          python run_jobagent.py --resume resume/Yashank_Patidar_resume_NITK.pdf --non-interactive --mode ${{ github.event.inputs.mode || 'refresh' }}
