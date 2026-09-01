@@ -50,6 +50,17 @@ jobs:
         run: |
           python -m playwright install --with-deps chromium
 
+      - name: Restore JobAgent cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/job_cache.db
+            data/job_cache.db-wal
+            data/job_cache.db-shm
+          key: job-cache-${{ github.run_id }}
+          restore-keys: |
+            job-cache-
+
       - name: Run JobAgent
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
@@ -59,3 +70,13 @@ jobs:
         run: |
           python -c "from playwright.async_api import async_playwright; print('Final Playwright check: OK')"
           python run_jobagent.py --resume resume/Yashank_Patidar_resume_NITK.pdf --non-interactive --mode ${{ github.event.inputs.mode || 'refresh' }}
+
+      - name: Persist JobAgent cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/job_cache.db
+            data/job_cache.db-wal
+            data/job_cache.db-shm
+          key: job-cache-${{ github.run_id }}

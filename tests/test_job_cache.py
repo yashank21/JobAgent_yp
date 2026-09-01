@@ -525,3 +525,103 @@ def test_context_manager(tmp_path):
 
     # Connection should be closed after exiting context
     assert cache._conn is None
+
+
+# ---------------------------------------------------------
+# 16. WAL safety for GitHub Actions cache persistence
+# ---------------------------------------------------------
+
+
+def test_close_checkpoints_wal(tmp_path):
+    """After close(), committed data must be in the main .db file,
+    not stranded in .db-wal."""
+    db_path = tmp_path / "wal_test.db"
+
+    cache = JobCache(db_path=db_path)
+    cache.upsert([_make_job(job_id="w1"), _make_job(job_id="w2")])
+
+    wal_path = db_path.with_suffix(".db-wal")
+    shm_path = db_path.with_suffix(".db-shm")
+
+    # WAL file exists while connection is open and data was written
+    assert wal_path.exists()
+
+    cache.close()
+
+    # After close(), WAL should be checkpointed into the main db.
+    # The WAL file may still exist on disk but should be empty (0 bytes).
+    if wal_path.exists():
+        assert wal_path.stat().st_size == 0
+
+    # SHM file should be removed after close()
+    assert not shm_path.exists()
+
+    # Reopen and verify data survived the checkpoint
+    cache2 = JobCache(db_path=db_path)
+    stats = cache2.get_stats()
+    assert stats["total"] == 2
+    assert stats["active"] == 2
+    cache2.close()
+
+
+def test_context_manager_checkpoints_wal(tmp_path):
+    """Context manager exit must checkpoint WAL so data is safe
+    for cache persistence."""
+    db_path = tmp_path / "wal_ctx.db"
+
+    with JobCache(db_path=db_path) as cache:
+        cache.upsert([_make_job(job_id="c1")])
+
+    wal_path = db_path.with_suffix(".db-wal")
+
+    if wal_path.exists():
+        assert wal_path.stat().st_size == 0
+
+    # Reopen and verify
+    cache2 = JobCache(db_path=db_path)
+    assert cache2.get_stats()["total"] == 1
+    cache2.close()
+
+
+def test_tryfinally_close_preserves_data(tmp_path):
+    """Even when an exception occurs, finally-block close() must
+    checkpoint data so the next run can restore it."""
+    db_path = tmp_path / "wal_finally.db"
+
+    cache = JobCache(db_path=db_path)
+    cache.upsert([_make_job(job_id="f1"), _make_job(job_id="f2")])
+
+    try:
+        raise ValueError("simulated pipeline failure")
+    except ValueError:
+        pass
+    finally:
+        cache.close()
+
+    # Reopen and verify both records survived
+    cache2 = JobCache(db_path=db_path)
+    stats = cache2.get_stats()
+    assert stats["total"] == 2
+    cache2.close()
+
+
+def test_cache_persistence_survives_reopen(tmp_path):
+    """Simulate the GitHub Actions scenario: write data, close,
+    reopen a fresh connection (as if restored from cache), read."""
+    db_path = tmp_path / "persist.db"
+
+    # Run 1: write and close
+    cache = JobCache(db_path=db_path)
+    cache.upsert([
+        _make_job(job_id="p1", title="Engineer"),
+        _make_job(job_id="p2", title="Scientist"),
+    ])
+    cache.close()
+
+    # Run 2: open fresh, read back
+    cache2 = JobCache(db_path=db_path)
+    jobs = cache2.query_active()
+    assert len(jobs) == 2
+    titles = {j.title for j in jobs}
+    assert titles == {"Engineer", "Scientist"}
+    cache2.close()

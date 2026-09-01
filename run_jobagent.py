@@ -221,123 +221,123 @@ def main(
 
     cache = JobCache()
 
-    if mode == "cache_only":
-        # -------------------------------------------------
-        # CACHE-ONLY MODE
-        # Do not contact any job sources.
-        # -------------------------------------------------
+    try:
+        if mode == "cache_only":
+            # -------------------------------------------------
+            # CACHE-ONLY MODE
+            # Do not contact any job sources.
+            # -------------------------------------------------
 
-        print(f"\nRunning in cache_only mode...")
+            print(f"\nRunning in cache_only mode...")
 
-        stats = cache.get_stats()
+            stats = cache.get_stats()
 
-        if stats["active"] == 0:
+            if stats["active"] == 0:
+                print(
+                    "\nERROR: cache_only mode requested but cache "
+                    "is empty. Run with --mode refresh first."
+                )
+                return
+
             print(
-                "\nERROR: cache_only mode requested but cache "
-                "is empty. Run with --mode refresh first."
+                f"Cache: {stats['active']} active, "
+                f"{stats['total']} total"
             )
-            cache.close()
-            return
+            print(f"Cache by source: {stats['by_source']}")
 
-        print(
-            f"Cache: {stats['active']} active, "
-            f"{stats['total']} total"
-        )
-        print(f"Cache by source: {stats['by_source']}")
+            cached_jobs = cache.query_active()
 
-        cached_jobs = cache.query_active()
+        else:
+            # -------------------------------------------------
+            # REFRESH MODE
+            # Crawl sources and upsert into cache.
+            #
+            # Each source is persisted independently so that a
+            # failure in one source does not discard successful
+            # work from another.
+            # -------------------------------------------------
 
-    else:
-        # -------------------------------------------------
-        # REFRESH MODE
-        # Crawl sources and upsert into cache.
-        #
-        # Each source is persisted independently so that a
-        # failure in one source does not discard successful
-        # work from another.
-        # -------------------------------------------------
+            print(f"\nRunning in refresh mode...")
 
-        print(f"\nRunning in refresh mode...")
+            # ---------------- ATS ----------------
 
-        # ---------------- ATS ----------------
+            company_names = load_companies_from_file()
 
-        company_names = load_companies_from_file()
-
-        print(
-            f"\nLoaded {len(company_names):,} companies "
-            "from companies.txt"
-        )
-
-        print("\nCollecting jobs through Universal ATS Racer...")
-
-        racer = UniversalATSRacer(
-            companies=company_names,
-            http_client=client,
-            max_workers=MAX_WORKERS,
-        )
-
-        ats_jobs = racer.collect_all()
-
-        print(f"ATS jobs collected: {len(ats_jobs):,}")
-
-        ats_deduped = deduplicate_jobs(ats_jobs)
-        cache.upsert(ats_deduped)
-
-        # ---------------- WELLFOUND ----------------
-
-        print("\nCollecting jobs from Wellfound...")
-
-        wellfound_urls = wellfound_search_urls(
-            roles=(
-                candidate_profile.preferred_roles
-                + candidate_profile.secondary_roles
-            ),
-            locations=candidate_profile.preferred_locations,
-        )
-
-        print("Wellfound search URLs:")
-        for url in wellfound_urls:
-            print(f"  {url}")
-
-        wellfound_collector = WellfoundCollector(
-            http_client=client,
-            urls=wellfound_urls,
-        )
-
-        try:
-            wellfound_jobs = wellfound_collector.collect()
-        except Exception as exc:
             print(
-                f"\nWellfound collection failed: {exc}"
+                f"\nLoaded {len(company_names):,} companies "
+                "from companies.txt"
             )
-            wellfound_jobs = []
 
-        print(
-            f"Wellfound jobs collected: "
-            f"{len(wellfound_jobs):,}"
-        )
+            print("\nCollecting jobs through Universal ATS Racer...")
 
-        wellfound_deduped = deduplicate_jobs(wellfound_jobs)
-        cache.upsert(wellfound_deduped)
+            racer = UniversalATSRacer(
+                companies=company_names,
+                http_client=client,
+                max_workers=MAX_WORKERS,
+            )
 
-        # ---------------- CACHE ----------------
+            ats_jobs = racer.collect_all()
 
-        cached_jobs = cache.query_active()
+            print(f"ATS jobs collected: {len(ats_jobs):,}")
 
-        stats = cache.get_stats()
+            ats_deduped = deduplicate_jobs(ats_jobs)
+            cache.upsert(ats_deduped)
 
-        print(
-            f"Cache: {stats['active']} active, "
-            f"{stats['total']} total"
-        )
-        print(f"Cache by source: {stats['by_source']}")
+            # ---------------- WELLFOUND ----------------
 
-    # Cross-source deduplication.  Per-source dedup happens
-    # before each upsert, but the cache may contain the same
-    # URL from different sources (e.g. greenhouse + wellfound).
-    cached_jobs = deduplicate_jobs(cached_jobs)
+            print("\nCollecting jobs from Wellfound...")
 
-    cache.close()
+            wellfound_urls = wellfound_search_urls(
+                roles=(
+                    candidate_profile.preferred_roles
+                    + candidate_profile.secondary_roles
+                ),
+                locations=candidate_profile.preferred_locations,
+            )
+
+            print("Wellfound search URLs:")
+            for url in wellfound_urls:
+                print(f"  {url}")
+
+            wellfound_collector = WellfoundCollector(
+                http_client=client,
+                urls=wellfound_urls,
+            )
+
+            try:
+                wellfound_jobs = wellfound_collector.collect()
+            except Exception as exc:
+                print(
+                    f"\nWellfound collection failed: {exc}"
+                )
+                wellfound_jobs = []
+
+            print(
+                f"Wellfound jobs collected: "
+                f"{len(wellfound_jobs):,}"
+            )
+
+            wellfound_deduped = deduplicate_jobs(wellfound_jobs)
+            cache.upsert(wellfound_deduped)
+
+            # ---------------- CACHE ----------------
+
+            cached_jobs = cache.query_active()
+
+            stats = cache.get_stats()
+
+            print(
+                f"Cache: {stats['active']} active, "
+                f"{stats['total']} total"
+            )
+            print(f"Cache by source: {stats['by_source']}")
+
+        # Cross-source deduplication.  Per-source dedup happens
+        # before each upsert, but the cache may contain the same
+        # URL from different sources (e.g. greenhouse + wellfound).
+        cached_jobs = deduplicate_jobs(cached_jobs)
+    finally:
+        cache.close()
 
     recent_jobs = filter_recent_jobs(
         cached_jobs,
