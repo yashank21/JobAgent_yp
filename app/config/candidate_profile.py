@@ -35,7 +35,7 @@ CANDIDATE_PROFILE = CandidateProfile(
 
     # Explicit user preferences.
     preferred_locations=[],
-    minimum_salary_lpa=0.0,
+    minimum_salary_lpa=None,
 
     github_url="",
 )

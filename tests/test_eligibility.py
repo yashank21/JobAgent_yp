@@ -418,3 +418,195 @@ def test_production_scheduler_is_not_eligible():
         in reason
         for reason in result.reasons
     )
+
+
+# ============================================================
+# STAGE 5 — ELIGIBILITY SEMANTICS
+# ============================================================
+
+
+def test_unset_location_preference_is_eligible():
+
+    candidate = make_candidate(
+        preferred_locations=[],
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+    )
+
+    result = is_job_eligible(candidate, job)
+
+    assert result.eligible is True
+    assert not any(
+        "outside preferred locations" in r
+        for r in result.reasons
+    )
+
+
+def test_configured_location_preference_is_enforced():
+
+    candidate = make_candidate(
+        preferred_locations=["Bengaluru"],
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+    )
+
+    result = is_job_eligible(candidate, job)
+
+    assert result.eligible is False
+    assert any(
+        "outside preferred locations" in r
+        for r in result.reasons
+    )
+
+
+def test_unset_role_preference_is_eligible():
+
+    candidate = make_candidate(
+        preferred_roles=[],
+        secondary_roles=[],
+    )
+
+    job = make_job(
+        title="Product Manager",
+    )
+
+    result = is_job_eligible(candidate, job)
+
+    assert result.eligible is True
+    assert not any(
+        "does not match preferred roles" in r
+        for r in result.reasons
+    )
+
+
+def test_configured_role_preference_is_enforced():
+
+    candidate = make_candidate(
+        preferred_roles=["Software Engineer"],
+        secondary_roles=[],
+    )
+
+    job = make_job(
+        title="Product Manager",
+    )
+
+    result = is_job_eligible(candidate, job)
+
+    assert result.eligible is False
+    assert any(
+        "does not match preferred roles" in r
+        for r in result.reasons
+    )
+
+
+def test_unset_salary_preference_does_not_reject():
+
+    candidate = make_candidate(
+        minimum_salary_lpa=None,
+    )
+
+    job = make_job(
+        salary_min_lpa=None,
+        salary_max_lpa=None,
+    )
+
+    result = check_eligibility(candidate, job)
+
+    assert result.eligible is True
+    assert not any(
+        "salary" in r.lower()
+        for r in result.reasons
+    )
+
+
+def test_explicit_salary_preference_preserves_existing_behavior():
+
+    candidate = make_candidate(
+        minimum_salary_lpa=10.0,
+    )
+
+    job = make_job(
+        salary_min_lpa=5.0,
+        salary_max_lpa=8.0,
+    )
+
+    result = check_eligibility(candidate, job)
+
+    assert result.eligible is True
+
+
+def test_unset_remote_preference_does_not_reject():
+
+    candidate = make_candidate(
+        prefer_remote=None,
+    )
+
+    job = make_job(
+        location="Bengaluru, India",
+        remote_type="",
+    )
+
+    result = check_eligibility(candidate, job)
+
+    assert result.eligible is True
+    assert not any(
+        "remote" in r.lower()
+        for r in result.reasons
+    )
+
+
+def test_resume_roles_are_not_hard_role_preferences():
+
+    candidate = CandidateProfile(
+        name="Test",
+        email="test@example.com",
+        resume_roles=["Software Engineer"],
+        preferred_roles=[],
+        secondary_roles=[],
+    )
+
+    job = make_job(
+        title="Product Manager",
+    )
+
+    result = is_job_eligible(candidate, job)
+
+    assert result.eligible is True
+    assert not any(
+        "does not match preferred roles" in r
+        for r in result.reasons
+    )
+
+
+def test_preferences_survive_resume_facts():
+
+    candidate = CandidateProfile(
+        name="Test",
+        email="test@example.com",
+        resume_roles=["Data Analyst"],
+        preferred_roles=["Software Engineer"],
+        secondary_roles=["Backend Engineer"],
+        preferred_locations=["India"],
+        minimum_salary_lpa=15.0,
+        prefer_remote=True,
+    )
+
+    assert candidate.preferences.preferred_roles == [
+        "Software Engineer",
+    ]
+    assert candidate.preferences.secondary_roles == [
+        "Backend Engineer",
+    ]
+    assert candidate.preferences.preferred_locations == [
+        "India",
+    ]
+    assert candidate.preferences.minimum_salary_lpa == 15.0
+    assert candidate.preferences.prefer_remote is True
+
+    assert candidate.facts.resume_roles == [
+        "Data Analyst",
+    ]

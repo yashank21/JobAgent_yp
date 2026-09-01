@@ -43,19 +43,19 @@ def build_candidate_profile(
     # Resume-derived facts
     # ---------------------------------------------------------
 
-    profile.skills = list(
+    profile.facts.skills = list(
         classification.skills
     )
 
-    profile.resume_roles = list(
+    profile.facts.resume_roles = list(
         classification.role_titles
     )
 
-    profile.experience_years = (
+    profile.facts.experience_years = (
         classification.experience_years
     )
 
-    profile.career_level = (
+    profile.facts.career_level = (
         classification.career_level
     )
 

@@ -69,7 +69,8 @@ def parse_args():
         default=False,
         help=(
             "Run without interactive prompts. "
-            "Resume-derived roles are used as preferred roles. "
+            "No user preferences are collected; scoring uses "
+            "resume-derived roles as fallback signals only. "
             "Intended for CI / scheduled execution."
         ),
     )
@@ -110,9 +111,11 @@ def collect_explicit_preferences(
     primary = _split_csv(input("\nPrimary roles: ").strip())
 
     if primary:
-        profile.preferred_roles = primary
-    elif profile.resume_roles:
-        profile.preferred_roles = list(profile.resume_roles)
+        profile.preferences.preferred_roles = primary
+    elif profile.facts.resume_roles:
+        profile.preferences.preferred_roles = list(
+            profile.facts.resume_roles
+        )
         print(
             "No primary roles entered. "
             "Resume-derived roles will be used as intent."
@@ -126,19 +129,19 @@ def collect_explicit_preferences(
     print("\nAny secondary / acceptable roles? (optional)")
     secondary = _split_csv(input("Secondary roles: ").strip())
     if secondary:
-        profile.secondary_roles = secondary
+        profile.preferences.secondary_roles = secondary
 
     print("\nPreferred locations? (optional)")
     print("Example: India, Bengaluru, Remote")
     locations = _split_csv(input("Locations: ").strip())
     if locations:
-        profile.preferred_locations = locations
+        profile.preferences.preferred_locations = locations
 
     print("\nMinimum salary in LPA? (optional, press Enter to skip)")
     salary_raw = input("Minimum LPA: ").strip()
     if salary_raw:
         try:
-            profile.minimum_salary_lpa = float(salary_raw)
+            profile.preferences.minimum_salary_lpa = float(salary_raw)
         except ValueError:
             print("Could not parse salary. Leaving it unset.")
 
@@ -151,13 +154,13 @@ def apply_default_preferences(
     """
     Non-interactive equivalent of collect_explicit_preferences.
 
-    Uses resume-derived roles as preferred roles when available.
+    Does NOT collect any user preferences. Resume roles remain
+    as facts (candidate_profile.facts.resume_roles) and are
+    used by the scoring system as fallback signals only.
     No input() calls — safe for CI / headless execution.
     """
 
-    if profile.resume_roles:
-        profile.preferred_roles = list(profile.resume_roles)
-    else:
+    if not profile.facts.resume_roles:
         print(
             "No roles found on the resume. "
             "Role ranking will be weak."
@@ -186,17 +189,17 @@ def main(
     )
 
     print(f"\nResume loaded: {resume_path}")
-    print(f"Resume skills: {len(candidate_profile.skills):,}")
-    print(f"Resume roles: {candidate_profile.resume_roles}")
+    print(f"Resume skills: {len(candidate_profile.facts.skills):,}")
+    print(f"Resume roles: {candidate_profile.facts.resume_roles}")
     print(
         f"Experience: "
-        f"{candidate_profile.experience_years:.2f} years"
+        f"{candidate_profile.facts.experience_years:.2f} years"
     )
-    print(f"Career level: {candidate_profile.career_level}")
+    print(f"Career level: {candidate_profile.facts.career_level}")
 
-    if candidate_profile.resume_roles:
+    if candidate_profile.facts.resume_roles:
         print("\nRoles inferred from the resume:")
-        for role in candidate_profile.resume_roles:
+        for role in candidate_profile.facts.resume_roles:
             print(f"  - {role}")
 
     if non_interactive:
@@ -209,14 +212,14 @@ def main(
         )
 
     print("\nUsing profile intent:")
-    print(f"  Primary roles: {candidate_profile.preferred_roles}")
-    print(f"  Secondary roles: {candidate_profile.secondary_roles}")
+    print(f"  Primary roles: {candidate_profile.preferences.preferred_roles}")
+    print(f"  Secondary roles: {candidate_profile.preferences.secondary_roles}")
     print(
-        f"  Locations: {candidate_profile.preferred_locations}"
+        f"  Locations: {candidate_profile.preferences.preferred_locations}"
     )
     print(
         f"  Minimum salary LPA: "
-        f"{candidate_profile.minimum_salary_lpa}"
+        f"{candidate_profile.preferences.minimum_salary_lpa}"
     )
 
     cache = JobCache()
@@ -289,10 +292,10 @@ def main(
 
             wellfound_urls = wellfound_search_urls(
                 roles=(
-                    candidate_profile.preferred_roles
-                    + candidate_profile.secondary_roles
+                    candidate_profile.preferences.preferred_roles
+                    + candidate_profile.preferences.secondary_roles
                 ),
-                locations=candidate_profile.preferred_locations,
+                locations=candidate_profile.preferences.preferred_locations,
             )
 
             print("Wellfound search URLs:")

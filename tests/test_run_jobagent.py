@@ -37,14 +37,15 @@ def test_parse_args_non_interactive_flag():
     assert args.non_interactive is True
 
 
-def test_apply_default_preferences_uses_resume_roles():
+def test_apply_default_preferences_does_not_copy_resume_roles():
     profile = CandidateProfile(
         resume_roles=["AI Engineer", "Backend Engineer"],
     )
 
     result = apply_default_preferences(profile)
 
-    assert result.preferred_roles == [
+    assert result.preferences.preferred_roles == []
+    assert result.facts.resume_roles == [
         "AI Engineer",
         "Backend Engineer",
     ]
@@ -56,7 +57,8 @@ def test_apply_default_preferences_empty_roles():
 
     result = apply_default_preferences(profile)
 
-    assert result.preferred_roles == []
+    assert result.preferences.preferred_roles == []
+    assert result.facts.resume_roles == []
     assert result is profile
 
 
@@ -70,9 +72,9 @@ def test_apply_default_preferences_does_not_touch_other_fields():
 
     apply_default_preferences(profile)
 
-    assert profile.preferred_locations == ["India"]
-    assert profile.minimum_salary_lpa == 15.0
-    assert profile.skills == ["Python", "PyTorch"]
+    assert profile.preferences.preferred_locations == ["India"]
+    assert profile.preferences.minimum_salary_lpa == 15.0
+    assert profile.facts.skills == ["Python", "PyTorch"]
 
 
 def test_non_interactive_does_not_call_input(capsys):
@@ -84,7 +86,11 @@ def test_non_interactive_does_not_call_input(capsys):
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert result.preferred_roles == ["SDE", "Software Engineer"]
+    assert result.preferences.preferred_roles == []
+    assert result.facts.resume_roles == [
+        "SDE",
+        "Software Engineer",
+    ]
 
 
 # ---------------------------------------------------------
@@ -523,3 +529,117 @@ def test_wellfound_empty_preserves_ats():
 
         # mark_stale must NOT be called automatically
         mock_cache.mark_stale.assert_not_called()
+
+
+# ---------------------------------------------------------
+# Stage 7 — Runner / User Preference Flow
+# ---------------------------------------------------------
+
+
+def test_interactive_preferences_populate_candidate_preferences():
+    from run_jobagent import collect_explicit_preferences
+
+    profile = CandidateProfile(
+        resume_roles=["Data Engineer"],
+        skills=["Python", "Spark"],
+    )
+
+    inputs = iter([
+        "AI Engineer, Backend Engineer",   # primary roles
+        "ML Engineer",                      # secondary roles
+        "Bengaluru, Remote",               # locations
+        "20",                               # salary
+    ])
+    with patch("builtins.input", side_effect=lambda _="": next(inputs)):
+        result = collect_explicit_preferences(profile)
+
+    assert result.preferences.preferred_roles == [
+        "AI Engineer",
+        "Backend Engineer",
+    ]
+    assert result.preferences.secondary_roles == [
+        "ML Engineer",
+    ]
+    assert result.preferences.preferred_locations == [
+        "Bengaluru",
+        "Remote",
+    ]
+    assert result.preferences.minimum_salary_lpa == 20.0
+
+
+def test_defaults_do_not_turn_resume_roles_into_preferences():
+    profile = CandidateProfile(
+        resume_roles=["AI Engineer", "Backend Engineer"],
+        skills=["Python"],
+    )
+
+    apply_default_preferences(profile)
+
+    assert profile.preferences.preferred_roles == []
+    assert profile.preferences.secondary_roles == []
+    assert profile.preferences.preferred_locations == []
+    assert profile.preferences.minimum_salary_lpa is None
+    assert profile.preferences.prefer_remote is None
+
+    assert profile.facts.resume_roles == [
+        "AI Engineer",
+        "Backend Engineer",
+    ]
+
+
+def test_resume_facts_survive_preference_collection():
+    from run_jobagent import collect_explicit_preferences
+
+    profile = CandidateProfile(
+        resume_roles=["ML Engineer"],
+        skills=["Python", "PyTorch"],
+        experience_years=2.5,
+        career_level="mid",
+        name="Test User",
+    )
+
+    inputs = iter([
+        "Software Engineer",   # primary roles
+        "",                     # secondary roles
+        "",                     # locations
+        "",                     # salary
+    ])
+    with patch("builtins.input", side_effect=lambda _="": next(inputs)):
+        result = collect_explicit_preferences(profile)
+
+    assert result.facts.resume_roles == ["ML Engineer"]
+    assert result.facts.skills == ["Python", "PyTorch"]
+    assert result.facts.experience_years == 2.5
+    assert result.facts.career_level == "mid"
+    assert result.facts.name == "Test User"
+
+
+def test_unset_preferences_remain_unset():
+    profile = CandidateProfile(
+        resume_roles=["SDE"],
+    )
+
+    apply_default_preferences(profile)
+
+    assert profile.preferences.preferred_roles == []
+    assert profile.preferences.secondary_roles == []
+    assert profile.preferences.preferred_locations == []
+    assert profile.preferences.minimum_salary_lpa is None
+    assert profile.preferences.prefer_remote is None
+
+
+def test_non_interactive_does_not_invent_preferences():
+    profile = CandidateProfile(
+        resume_roles=["Backend Engineer"],
+        skills=["Go", "PostgreSQL"],
+    )
+
+    apply_default_preferences(profile)
+
+    assert profile.preferences.preferred_roles == []
+    assert profile.preferences.preferred_locations == []
+    assert profile.preferences.minimum_salary_lpa is None
+    assert profile.preferences.prefer_remote is None
+
+    assert profile.facts.resume_roles == ["Backend Engineer"]
+    assert profile.facts.skills == ["Go", "PostgreSQL"]

@@ -310,7 +310,7 @@ def analyze_dataset(
             experience_buckets["8+"] += 1
 
     report.experience = {
-        "candidate_years": candidate.experience_years,
+        "candidate_years": candidate.facts.experience_years,
         "distribution": _distribution(
             [float(value) for value in experience_values]
         ),

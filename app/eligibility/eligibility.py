@@ -139,7 +139,7 @@ def is_location_eligible(
         preferred_locations = candidate
     else:
         preferred_locations = getattr(
-            candidate,
+            candidate.preferences,
             "preferred_locations",
             [],
         )
@@ -212,7 +212,7 @@ def is_experience_eligible(
         return True
 
     candidate_experience = getattr(
-        candidate,
+        candidate.facts,
         "experience_years",
         0.0,
     )
@@ -254,7 +254,7 @@ def is_role_eligible(
 
     preferred_roles = list(
         getattr(
-            candidate,
+            candidate.preferences,
             "preferred_roles",
             [],
         )
@@ -263,7 +263,7 @@ def is_role_eligible(
 
     secondary_roles = list(
         getattr(
-            candidate,
+            candidate.preferences,
             "secondary_roles",
             [],
         )
@@ -387,7 +387,7 @@ def is_work_authorization_eligible(
     preferred_locations = [
         location.lower()
         for location in getattr(
-            candidate,
+            candidate.preferences,
             "preferred_locations",
             [],
         )
@@ -501,7 +501,7 @@ def check_eligibility(
     )
 
     candidate_experience = getattr(
-        candidate,
+        candidate.facts,
         "experience_years",
         0.0,
     )

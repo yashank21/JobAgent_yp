@@ -22,7 +22,7 @@ def make_candidate(
         education=[],
         projects=[],
         preferred_locations=[],
-        minimum_salary_lpa=0.0,
+        minimum_salary_lpa=None,
         github_url="",
     )
 
@@ -133,7 +133,7 @@ def test_no_candidate_role_information_returns_zero():
 
     job = make_job("Software Engineer")
 
-    assert calculate_role_score(candidate, job) == 0.0
+    assert calculate_role_score(candidate, job) is None
 
 
 

@@ -30,7 +30,7 @@ def calculate_skill_score(
     """
 
     candidate_skills = normalize_skills(
-        candidate.skills
+        candidate.facts.skills
     )
 
     required_skills = normalize_skills(
@@ -102,7 +102,7 @@ def calculate_experience_score(
     if required_experience <= 0:
         return 100.0
 
-    candidate_experience = candidate.experience_years
+    candidate_experience = candidate.facts.experience_years
 
     if candidate_experience >= required_experience:
         return 100.0
@@ -119,12 +119,12 @@ def calculate_role_score(
 ) -> float:
     """Score how well the job title matches preferred roles."""
 
-    if not candidate.preferred_roles:
-        return 100.0
+    if not candidate.preferences.preferred_roles:
+        return None
 
     job_title = _normalize(job.title)
 
-    for role in candidate.preferred_roles:
+    for role in candidate.preferences.preferred_roles:
         if _normalize(role) in job_title:
             return 100.0
 
@@ -134,15 +134,19 @@ def calculate_role_score(
 def calculate_location_score(
     candidate: CandidateProfile,
     job: Job,
-) -> float:
-    """Score whether the job location matches candidate preferences."""
+) -> float | None:
+    """Score whether the job location matches candidate preferences.
 
-    if not candidate.preferred_locations:
-        return 100.0
+    Returns None when the user has not configured a location
+    preference (empty preferred_locations list).
+    """
+
+    if not candidate.preferences.preferred_locations:
+        return None
 
     job_location = _normalize(job.location)
 
-    for location in candidate.preferred_locations:
+    for location in candidate.preferences.preferred_locations:
         if _normalize(location) in job_location:
             return 100.0
 
@@ -152,17 +156,21 @@ def calculate_location_score(
 def calculate_salary_score(
     candidate: CandidateProfile,
     job: Job,
-) -> float:
+) -> float | None:
     """
     Score whether the job satisfies the candidate's minimum salary.
 
-    If no salary information exists, don't punish the job.
+    Returns None when no minimum salary is configured (None).
+    If no salary information exists on the job, don't punish it.
     """
 
-    minimum_salary = candidate.minimum_salary_lpa
+    minimum_salary = candidate.preferences.minimum_salary_lpa
+
+    if minimum_salary is None:
+        return None
 
     if minimum_salary <= 0:
-        return 100.0
+        return None
 
     if job.salary_max_lpa is None:
         return 100.0

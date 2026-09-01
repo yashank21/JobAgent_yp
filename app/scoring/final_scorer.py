@@ -40,13 +40,16 @@ LOCATION_WEIGHT = 0.10
 def calculate_location_score(
     candidate: CandidateProfile,
     job: Job,
-) -> float:
+) -> float | None:
     """
     Calculate candidate/job location compatibility.
+
+    Returns None when the user has not configured a location
+    preference (empty preferred_locations list).
     """
 
-    if not candidate.preferred_locations:
-        return 100.0
+    if not candidate.preferences.preferred_locations:
+        return None
 
     from app.location.location_normalizer import location_matches
 
@@ -56,7 +59,7 @@ def calculate_location_score(
             "location",
             "",
         ),
-        preferred_locations=candidate.preferred_locations,
+        preferred_locations=candidate.preferences.preferred_locations,
         remote_type=getattr(
             job,
             "remote_type",
@@ -102,42 +105,41 @@ def _job_lists_skills(job: Job) -> bool:
 
 def calculate_final_score(
     skill_score: float | None,
-    role_score: float,
-    experience_score: float,
-    location_score: float,
+    role_score: float | None,
+    experience_score: float | None,
+    location_score: float | None,
 ) -> float:
     """
     Calculate the final candidate-job compatibility score.
 
-    When skill information is unavailable, its weight is
-    redistributed across the remaining scoring dimensions.
+    When any dimension is None (unconfigured), its weight is
+    redistributed proportionally across the remaining active
+    dimensions.  Unconfigured dimensions never receive a
+    synthetic score of 100.
     """
 
-    if skill_score is None:
+    dimensions = {
+        SKILL_WEIGHT: skill_score,
+        ROLE_WEIGHT: role_score,
+        EXPERIENCE_WEIGHT: experience_score,
+        LOCATION_WEIGHT: location_score,
+    }
 
-        remaining_weight = (
-            ROLE_WEIGHT
-            + EXPERIENCE_WEIGHT
-            + LOCATION_WEIGHT
-        )
+    active = {
+        w: s
+        for w, s in dimensions.items()
+        if s is not None
+    }
 
-        score = (
-            role_score
-            * (ROLE_WEIGHT / remaining_weight)
-            + experience_score
-            * (EXPERIENCE_WEIGHT / remaining_weight)
-            + location_score
-            * (LOCATION_WEIGHT / remaining_weight)
-        )
+    if not active:
+        return 0.0
 
-    else:
+    total_weight = sum(active.keys())
 
-        score = (
-            skill_score * SKILL_WEIGHT
-            + role_score * ROLE_WEIGHT
-            + experience_score * EXPERIENCE_WEIGHT
-            + location_score * LOCATION_WEIGHT
-        )
+    score = sum(
+        s * (w / total_weight)
+        for w, s in active.items()
+    )
 
     return round(
         max(
@@ -211,7 +213,7 @@ def score_job(
         role_score=round(
             role_score,
             2,
-        ),
+        ) if role_score is not None else None,
         experience_score=round(
             experience_score,
             2,
@@ -219,7 +221,7 @@ def score_job(
         location_score=round(
             location_score,
             2,
-        ),
+        ) if location_score is not None else None,
         final_score=final_score,
         eligibility_reasons=eligibility.reasons,
     )

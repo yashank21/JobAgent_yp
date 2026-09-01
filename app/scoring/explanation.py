@@ -31,7 +31,7 @@ def explain_skill_match(
 
     candidate_skills = {
         _normalize(skill)
-        for skill in candidate.skills
+        for skill in candidate.facts.skills
     }
 
     explanations = []
@@ -67,12 +67,14 @@ def explain_role_match(
 ) -> str:
     """Explain role compatibility using role-family classification."""
 
-    preferred = list(candidate.preferred_roles or [])
-    secondary = list(getattr(candidate, "secondary_roles", []) or [])
-    resume_roles = list(candidate.resume_roles or [])
+    preferred = list(candidate.preferences.preferred_roles or [])
+    secondary = list(getattr(candidate.preferences, "secondary_roles", []) or [])
+    resume_roles = list(candidate.facts.resume_roles or [])
 
-    if not preferred and not secondary and not resume_roles:
-        return "⚠ No role intent or resume roles available"
+    if not preferred and not secondary:
+        if not resume_roles:
+            return "⚠ Role preference not configured"
+        return "⚠ Role preference not configured (resume evidence only)"
 
     job_family = classify_role(job.title)
 
@@ -97,8 +99,8 @@ def explain_location_match(
 ) -> str:
     """Explain location compatibility."""
 
-    if not candidate.preferred_locations:
-        return "✓ No preferred location restriction"
+    if not candidate.preferences.preferred_locations:
+        return "⚠ Location preference not configured"
 
     normalized_job = normalize_location(
         job.location
@@ -121,7 +123,7 @@ def explain_location_match(
 
     if is_remote_job:
 
-        for location in candidate.preferred_locations:
+        for location in candidate.preferences.preferred_locations:
 
             normalized_pref = normalize_location(
                 location
@@ -147,7 +149,7 @@ def explain_location_match(
 
     if location_matches(
     job.location,
-    candidate.preferred_locations,
+    candidate.preferences.preferred_locations,
     job.remote_type,
     ):
         return (
@@ -161,7 +163,7 @@ def explain_location_match(
 
     normalized_preferences = [
         normalize_location(location)
-        for location in candidate.preferred_locations
+        for location in candidate.preferences.preferred_locations
     ]
 
     if (
@@ -191,7 +193,7 @@ def explain_experience_match(
     if required is None or required <= 0:
         return "✓ Experience: No explicit requirement"
 
-    candidate_experience = candidate.experience_years
+    candidate_experience = candidate.facts.experience_years
 
     if candidate_experience >= required:
         return (
@@ -213,10 +215,13 @@ def explain_salary_match(
 ) -> str:
     """Explain salary compatibility."""
 
-    minimum = candidate.minimum_salary_lpa
+    minimum = candidate.preferences.minimum_salary_lpa
+
+    if minimum is None:
+        return "⚠ Salary preference not configured"
 
     if minimum <= 0:
-        return "✓ No minimum salary requirement"
+        return "⚠ Salary preference not configured"
 
     if job.salary_max_lpa is None:
         return "⚠ Salary information unavailable"

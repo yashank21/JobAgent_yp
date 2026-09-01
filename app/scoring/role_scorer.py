@@ -189,7 +189,7 @@ def _best_role_score(
 def calculate_role_score(
     candidate: CandidateProfile,
     job: Job,
-) -> float:
+) -> float | None:
     """
     Calculate role compatibility from 0–100.
 
@@ -199,8 +199,10 @@ def calculate_role_score(
     A role matches when the candidate role and job role resolve
     to the same canonical RoleFamily.
 
-    Missing candidate role information is treated as unknown,
-    not as evidence of incompatibility.
+    Returns None when no role preference is configured AND no
+    resume roles are available (role is unconfigured).
+    Resume roles are facts/evidence, not preferences, but they
+    still provide a scoring signal.
     """
 
     job_family = _resolve_job_family(job)
@@ -209,15 +211,15 @@ def calculate_role_score(
         return 0.0
 
     preferred_roles = list(
-        getattr(candidate, "preferred_roles", []) or []
+        getattr(candidate.preferences, "preferred_roles", []) or []
     )
 
     secondary_roles = list(
-        getattr(candidate, "secondary_roles", []) or []
+        getattr(candidate.preferences, "secondary_roles", []) or []
     )
 
     resume_roles = list(
-        getattr(candidate, "resume_roles", []) or []
+        getattr(candidate.facts, "resume_roles", []) or []
     )
 
     preferred_score = _best_role_score(
@@ -249,12 +251,12 @@ def calculate_role_score(
     ]
 
     if not role_scores:
-        return 0.0
+        return None
 
     role_score = max(role_scores)
 
     seniority_score = _seniority_score(
-        getattr(candidate, "career_level", None),
+        getattr(candidate.facts, "career_level", None),
         getattr(job, "seniority", None),
     )
 

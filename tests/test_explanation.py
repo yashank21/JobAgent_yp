@@ -282,3 +282,143 @@ def test_role_explanation_matches_software_development_engineer():
         "✓ Role matches preferred role: "
         "Software Engineer"
     )
+
+
+# ============================================================
+# STAGE 6 — EXPLANATION LAYER TESTS
+# ============================================================
+
+
+def test_unset_location_preference_explanation():
+
+    candidate = make_candidate(
+        preferred_locations=[],
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+    )
+
+    result = explain_location_match(candidate, job)
+
+    assert "not configured" in result.lower()
+    assert "100%" not in result
+    assert "match" not in result.lower() or "not configured" in result.lower()
+
+
+def test_unset_role_preference_explanation():
+
+    candidate = make_candidate(
+        preferred_roles=[],
+        secondary_roles=[],
+    )
+
+    job = make_job(
+        title="Software Engineer",
+    )
+
+    result = explain_role_match(candidate, job)
+
+    assert "not configured" in result.lower()
+
+
+def test_unset_salary_preference_explanation():
+
+    candidate = make_candidate(
+        minimum_salary_lpa=None,
+    )
+
+    job = make_job(
+        salary_max_lpa=15.0,
+    )
+
+    result = explain_salary_match(candidate, job)
+
+    assert "not configured" in result.lower()
+
+
+def test_zero_score_is_not_treated_as_unset():
+
+    candidate = make_candidate(
+        preferred_roles=["Software Engineer"],
+    )
+
+    job = make_job(
+        title="Software Engineer",
+    )
+
+    role_result = explain_role_match(candidate, job)
+
+    assert "✓" in role_result
+    assert "not configured" not in role_result.lower()
+
+
+def test_resume_roles_are_explained_as_evidence():
+
+    candidate = CandidateProfile(
+        name="Test",
+        email="test@example.com",
+        resume_roles=["Data Analyst"],
+        preferred_roles=[],
+        secondary_roles=[],
+    )
+
+    job = make_job(
+        title="Data Analyst",
+    )
+
+    result = explain_role_match(candidate, job)
+
+    assert "resume" in result.lower() or "evidence" in result.lower()
+
+
+def test_nested_candidate_access_in_explanation():
+
+    candidate = CandidateProfile(
+        name="Test",
+        email="test@example.com",
+        resume_roles=["Backend Engineer"],
+        preferred_roles=["Software Engineer"],
+        secondary_roles=["Backend Engineer"],
+        preferred_locations=["India"],
+        minimum_salary_lpa=15.0,
+        skills=["Python", "Go"],
+    )
+
+    job = make_job(
+        title="Software Engineer",
+        location="India",
+        required_skills=["Python"],
+        salary_max_lpa=20.0,
+    )
+
+    skill_result = explain_skill_match(candidate, job)
+    role_result = explain_role_match(candidate, job)
+    location_result = explain_location_match(candidate, job)
+    salary_result = explain_salary_match(candidate, job)
+
+    assert "✓ Python — required" in skill_result
+    assert "✓" in role_result
+    assert "✓" in location_result
+    assert "✓" in salary_result
+
+
+def test_none_scores_do_not_crash():
+
+    candidate = make_candidate(
+        preferred_locations=[],
+        preferred_roles=[],
+        secondary_roles=[],
+        minimum_salary_lpa=None,
+    )
+
+    job = make_job(
+        location="Hawthorne, CA",
+        title="Product Manager",
+        salary_max_lpa=None,
+    )
+
+    result = explain_match(candidate, job)
+
+    assert len(result) >= 5
+    assert any("not configured" in r.lower() for r in result)

@@ -203,7 +203,7 @@ def test_location_score_no_preference():
     assert calculate_location_score(
         candidate,
         job,
-    ) == 100.0
+    ) is None
 
 
 # ============================================================

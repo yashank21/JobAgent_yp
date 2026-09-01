@@ -36,7 +36,7 @@ def _candidate_years(candidate: CandidateProfile) -> float:
         return max(
             float(
                 getattr(
-                    candidate,
+                    candidate.facts,
                     "experience_years",
                     0.0,
                 )
