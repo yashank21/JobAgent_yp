@@ -7,6 +7,74 @@ Extracts minimum years of experience from job-description text.
 import re
 
 
+# ============================================================
+# REQUIREMENT STRICTNESS
+# ============================================================
+
+# Controlled vocabulary for how strictly the requirement
+# is likely enforced.
+#
+# UNKNOWN  = ambiguous or missing wording
+# PREFERRED = nice-to-have, unlikely hard filter
+# REQUIRED = standard requirement, may be flexible
+# STRICT  = explicitly enforced, high screening risk
+
+_STRICT_PATTERNS = [
+    r"\bmust\s+have\b",
+    r"\brequired\b",
+    r"\bmandatory\b",
+    r"\bessential\b",
+    r"\bnon[- ]?negotiable\b",
+    r"\bonly\s+candidates?\s+with\b",
+    r"\bminimum\s+of\b",
+]
+
+_PREFERRED_PATTERNS = [
+    r"\bpreferred\b",
+    r"\bdesirable\b",
+    r"\bnice[- ]to[- ]have\b",
+    r"\bplus\b",
+    r"\badvantageous\b",
+    r"\bideal\b",
+    r"\bwould\s+be\s+(?:a\s+)?(?:bonus|plus|advantage)\b",
+]
+
+
+def classify_requirement_strictness(
+    experience_text: str,
+) -> str:
+    """
+    Classify how strictly the experience requirement is worded.
+
+    Returns one of: "unknown", "preferred", "required", "strict"
+
+    This is a conservative, explainable classification.
+    It does NOT predict recruiter behavior — it classifies
+    the stated wording only.
+    """
+
+    if not experience_text:
+        return "unknown"
+
+    text = experience_text.lower().strip()
+
+    for pattern in _STRICT_PATTERNS:
+        if re.search(pattern, text):
+            return "strict"
+
+    for pattern in _PREFERRED_PATTERNS:
+        if re.search(pattern, text):
+            return "preferred"
+
+    # If a numeric requirement exists but no strictness keyword,
+    # treat as standard "required".
+    parsed = parse_experience_years(text)
+    if parsed is not None and parsed > 0:
+        return "required"
+
+    return "unknown"
+
+
 def parse_experience_years(text: str) -> float | None:
     """
     Extract the minimum required experience from text.

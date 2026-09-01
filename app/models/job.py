@@ -39,6 +39,10 @@ class Job:
     # "1-3 years of experience" -> 1.0
     experience_years_required: float | None = None
 
+    # How strictly the experience requirement is likely enforced.
+    # "unknown" | "preferred" | "required" | "strict"
+    requirement_strictness: str = "unknown"
+
     seniority: str = "unknown"
     role_family: str = ""
     job_type: str | None = None

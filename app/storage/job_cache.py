@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -235,7 +235,7 @@ class JobCache:
         return [self._deserialize_job(row["job_json"]) for row in rows]
 
     # ---------------------------------------------------------
-    # Stale (available but NOT auto-called by pipeline)
+    # Source reconciliation
     # ---------------------------------------------------------
 
     def mark_stale(
@@ -244,12 +244,28 @@ class JobCache:
         active_ids: set[str],
     ) -> int:
         """
-        Mark jobs from a source as stale when their ID
-        is not in active_ids.
+        Mark jobs from a source as stale when their ID is NOT
+        in active_ids.
 
-        This is available for manual or policy-driven use.
-        The normal production pipeline does NOT call this
-        automatically.
+        This is the core reconciliation method. After a successful
+        complete collection from a source, call this with the set
+        of source_job_ids that were observed. Any previously cached
+        jobs from that source whose ID was NOT seen will be marked
+        inactive (is_active = 0).
+
+        Safety:
+            - Only affects jobs belonging to the specified source.
+            - Only marks jobs that are currently active.
+            - Does NOT modify last_seen_at.
+            - Does NOT delete anything.
+            - Re-upserting a stale job automatically reactivates it.
+
+        Do NOT call this when:
+            - The collector raised an exception.
+            - The collection was partial or incomplete.
+            - The source is unavailable.
+            - You are unsure whether the result represents a
+              complete scan of the source.
         """
         placeholder = ",".join("?" for _ in active_ids) if active_ids else "''"
 
@@ -318,6 +334,63 @@ class JobCache:
             "stale": row["stale"] or 0,
             "by_source": {r["source"]: r["cnt"] for r in sources},
         }
+
+    # ---------------------------------------------------------
+    # Expiry / deletion
+    # ---------------------------------------------------------
+
+    def delete_expired(
+        self,
+        older_than_days: int = 30,
+    ) -> int:
+        """
+        Permanently delete stale jobs older than the expiry threshold.
+
+        Safety:
+            - Only deletes jobs where is_active = 0.
+            - Compares against last_seen_at (cache-controlled).
+            - Never deletes active jobs.
+            - Never modifies active jobs.
+            - Missing or malformed last_seen_at → job is preserved.
+            - Invalid threshold → raises ValueError.
+
+        Args:
+            older_than_days: Number of days. Must be >= 1.
+
+        Returns:
+            Number of deleted rows.
+        """
+        if older_than_days < 1:
+            raise ValueError(
+                f"older_than_days must be >= 1, got {older_than_days}"
+            )
+
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=older_than_days)
+        cutoff_iso = cutoff.isoformat()
+
+        cursor = self._conn.execute(
+            """
+            DELETE FROM job_cache
+            WHERE is_active = 0
+              AND last_seen_at IS NOT NULL
+              AND last_seen_at != ''
+              AND last_seen_at < ?
+            """,
+            (cutoff_iso,),
+        )
+
+        self._conn.commit()
+
+        count = cursor.rowcount
+
+        if count > 0:
+            print(
+                f"Cache delete_expired: {count} stale jobs deleted "
+                f"(older than {older_than_days} days)"
+            )
+
+        return count
 
     # ---------------------------------------------------------
     # Cleanup

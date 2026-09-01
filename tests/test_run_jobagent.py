@@ -214,7 +214,10 @@ def test_refresh_calls_collectors():
         mock_racer_cls.assert_called_once()
         mock_wf_cls.assert_called_once()
         assert mock_cache.upsert.call_count == 2
-        mock_cache.mark_stale.assert_not_called()
+        # mark_stale called for wellfound (successful collection)
+        mock_cache.mark_stale.assert_called_once_with(
+            "wellfound", set()
+        )
 
 
 def test_cache_only_empty_cache_exits_early():
@@ -456,8 +459,10 @@ def test_both_collectors_succeed():
         assert len(second_args[0][0]) == 1
         assert second_args[0][0][0].source == "wellfound"
 
-        # mark_stale must NOT be called automatically
-        mock_cache.mark_stale.assert_not_called()
+        # mark_stale called for wellfound (successful collection)
+        mock_cache.mark_stale.assert_called_once_with(
+            "wellfound", {"wf-1"}
+        )
 
 
 def test_wellfound_empty_preserves_ats():
@@ -527,8 +532,11 @@ def test_wellfound_empty_preserves_ats():
         second_args = mock_cache.upsert.call_args_list[1]
         assert len(second_args[0][0]) == 0
 
-        # mark_stale must NOT be called automatically
-        mock_cache.mark_stale.assert_not_called()
+        # mark_stale called for wellfound (successful but empty
+        # collection marks all cached wellfound jobs stale)
+        mock_cache.mark_stale.assert_called_once_with(
+            "wellfound", set()
+        )
 
 
 # ---------------------------------------------------------

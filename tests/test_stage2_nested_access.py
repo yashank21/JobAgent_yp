@@ -14,9 +14,6 @@ from app.scoring.experience_scorer import (
 )
 from app.scoring.job_scorer import (
     calculate_skill_score,
-    calculate_role_score as job_calculate_role_score,
-    calculate_location_score,
-    calculate_salary_score,
 )
 from app.scoring.final_scorer import calculate_location_score as final_calculate_location_score
 from app.scoring.explanation import (

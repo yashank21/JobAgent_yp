@@ -102,33 +102,6 @@ def _resolve_role_family(
 
     return classify_role(str(value))
 
-def _score_role_pair(
-    candidate_family: RoleFamily,
-    job_family: RoleFamily,
-) -> float:
-    """
-    Compatibility helper used by eligibility.
-
-    Role compatibility is candidate-agnostic:
-    - Same RoleFamily -> compatible
-    - Different RoleFamily -> currently incompatible
-
-    Detailed candidate-driven weighting belongs to
-    calculate_role_score().
-    """
-
-    if (
-        candidate_family == RoleFamily.UNKNOWN
-        or job_family == RoleFamily.UNKNOWN
-    ):
-        return 0.0
-
-    if candidate_family == job_family:
-        return 100.0
-
-    return 0.0
-
-
 def _resolve_job_family(job: Job) -> RoleFamily:
 
     ai_role_family = getattr(job, "role_family", "")

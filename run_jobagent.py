@@ -248,6 +248,12 @@ def main(
             )
             print(f"Cache by source: {stats['by_source']}")
 
+            # ---------------- EXPIRY ----------------
+            # Clean up old stale jobs even in cache_only mode.
+            # Jobs marked stale in previous refresh runs and old
+            # enough are permanently removed.
+            cache.delete_expired(older_than_days=30)
+
             cached_jobs = cache.query_active()
 
         else:
@@ -286,6 +292,12 @@ def main(
             ats_deduped = deduplicate_jobs(ats_jobs)
             cache.upsert(ats_deduped)
 
+            # NOTE: Stale reconciliation is NOT performed for the
+            # multi-source ATS racer.  Each company may use a
+            # different ATS (Greenhouse, Lever, Ashby, Workday),
+            # and individual failures are silently caught.  We
+            # cannot determine per-source completeness.
+
             # ---------------- WELLFOUND ----------------
 
             print("\nCollecting jobs from Wellfound...")
@@ -307,8 +319,10 @@ def main(
                 urls=wellfound_urls,
             )
 
+            wellfound_collection_ok = False
             try:
                 wellfound_jobs = wellfound_collector.collect()
+                wellfound_collection_ok = True
             except Exception as exc:
                 print(
                     f"\nWellfound collection failed: {exc}"
@@ -322,6 +336,28 @@ def main(
 
             wellfound_deduped = deduplicate_jobs(wellfound_jobs)
             cache.upsert(wellfound_deduped)
+
+            # Reconcile: mark cached Wellfound jobs not seen in
+            # this collection as stale.  Safe because:
+            #   - Wellfound is a single-source collector.
+            #   - collect() completed without raising an exception.
+            #   - Per-URL failures are caught internally.
+            # If the collection failed (exception), we skip
+            # reconciliation to preserve all existing jobs.
+            if wellfound_collection_ok:
+                wellfound_seen_ids = {
+                    j.id
+                    for j in wellfound_deduped
+                    if j.id
+                }
+                cache.mark_stale("wellfound", wellfound_seen_ids)
+
+            # ---------------- EXPIRY ----------------
+            # Delete stale jobs older than 30 days.  Safe here
+            # because mark_stale() has already run for any
+            # successfully collected sources.  Only jobs that
+            # were already inactive AND old enough are removed.
+            cache.delete_expired(older_than_days=30)
 
             # ---------------- CACHE ----------------
 

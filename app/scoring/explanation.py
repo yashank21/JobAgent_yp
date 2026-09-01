@@ -182,7 +182,7 @@ def explain_experience_match(
     candidate: CandidateProfile,
     job: Job,
 ) -> str:
-    """Explain experience compatibility."""
+    """Explain experience compatibility with risk awareness."""
 
     required = getattr(
         job,
@@ -202,10 +202,32 @@ def explain_experience_match(
             f"{required:.2f} years)"
         )
 
+    # Include risk context in the explanation
+    from app.scoring.experience_scorer import classify_experience_risk
+    from app.services.experience_parser import classify_requirement_strictness
+
+    strictness_text = getattr(
+        job, "requirement_strictness", "unknown",
+    ) or "unknown"
+
+    risk = classify_experience_risk(
+        candidate_experience,
+        required,
+        strictness_text,
+    )
+
+    risk_label = {
+        "low": "Low screening risk",
+        "medium": "May be a screening risk",
+        "high": "Below stated requirement — may be screened",
+        "unknown": "Screening risk unknown",
+    }.get(risk, "Screening risk unknown")
+
     return (
         f"✗ Experience requirement not met "
         f"({candidate_experience:.2f} / "
-        f"{required:.2f} years)"
+        f"{required:.2f} years) — "
+        f"{risk_label}"
     )
 
 

@@ -56,16 +56,7 @@ class RoleFamily(str, Enum):
     UNKNOWN = "unknown"
 
 
-class SeniorityLevel(str, Enum):
-    ENTRY = "entry"
-    MID = "mid"
-    SENIOR = "senior"
-    LEAD = "lead"
-    STAFF = "staff"
-    PRINCIPAL = "principal"
-    MANAGER = "manager"
-    DIRECTOR = "director"
-    UNKNOWN = "unknown"
+
 
 
 # ============================================================
@@ -422,70 +413,8 @@ ROLE_PATTERNS = {
 # SENIORITY PATTERNS
 # ============================================================
 
-SENIORITY_PATTERNS = {
-    SeniorityLevel.DIRECTOR: [
-        r"\bdirector\b",
-        r"\bvice president\b",
-        r"\bvp\b",
-        r"\bhead of\b",
-    ],
-
-    SeniorityLevel.MANAGER: [
-        r"\bengineering manager\b",
-        r"\bsoftware engineering manager\b",
-        r"\bengineering management\b",
-        r"\bmanager\b",
-    ],
-
-    SeniorityLevel.PRINCIPAL: [
-        r"\bprincipal\b",
-    ],
-
-    SeniorityLevel.STAFF: [
-        r"\bstaff\b",
-    ],
-
-    SeniorityLevel.LEAD: [
-        r"\blead\b",
-        r"\btech lead\b",
-        r"\btechnical lead\b",
-    ],
-
-    SeniorityLevel.SENIOR: [
-        r"\bsenior\b",
-        r"\bsr\b",
-    ],
-
-    SeniorityLevel.MID: [
-        r"\bmid level\b",
-        r"\bmid-level\b",
-        r"\bexperienced\b",
-
-        # Common engineering level conventions
-        r"\bengineer ii\b",
-        r"\bengineer iii\b",
-        r"\bsde ii\b",
-        r"\bsde iii\b",
-        r"\blevel ii\b",
-        r"\blevel iii\b",
-        r"\blevel 2\b",
-        r"\blevel 3\b",
-    ],
-
-    SeniorityLevel.ENTRY: [
-        r"\bjunior\b",
-        r"\bjr\b",
-        r"\bentry level\b",
-        r"\bgraduate\b",
-        r"\bnew grad\b",
-        r"\bnew graduate\b",
-        r"\bearly career\b",
-        r"\bengineer i\b",
-        r"\bsde i\b",
-        r"\blevel i\b",
-        r"\blevel 1\b",
-    ],
-}
+# Seniority classification is handled by app.eligibility.seniority.classify_seniority.
+# This module no longer contains a duplicate seniority implementation.
 
 
 def normalize_role_title(title: str) -> str:
@@ -539,37 +468,6 @@ def normalize_role_title(title: str) -> str:
     )
 
     return title.strip()
-
-
-def classify_seniority(title: str) -> SeniorityLevel:
-    """
-    Classify job-title seniority.
-
-    More senior levels are checked first.
-    """
-
-    normalized = normalize_role_title(title)
-
-    if not normalized:
-        return SeniorityLevel.UNKNOWN
-
-    priority_order = [
-        SeniorityLevel.DIRECTOR,
-        SeniorityLevel.MANAGER,
-        SeniorityLevel.PRINCIPAL,
-        SeniorityLevel.STAFF,
-        SeniorityLevel.LEAD,
-        SeniorityLevel.SENIOR,
-        SeniorityLevel.MID,
-        SeniorityLevel.ENTRY,
-    ]
-
-    for level in priority_order:
-        for pattern in SENIORITY_PATTERNS[level]:
-            if re.search(pattern, normalized):
-                return level
-
-    return SeniorityLevel.UNKNOWN
 
 
 def classify_role(title: str) -> RoleFamily:

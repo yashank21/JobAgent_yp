@@ -27,6 +27,7 @@ class CandidateFacts:
     skills: list[str] = field(default_factory=list)
     resume_roles: list[str] = field(default_factory=list)
     experience_years: float = 0.0
+    internship_years: float | None = None
     career_level: str = ""
     education: list[str] = field(default_factory=list)
     projects: list[str] = field(default_factory=list)

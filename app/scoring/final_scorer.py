@@ -19,8 +19,12 @@ from app.models.match import JobMatch
 from app.eligibility.eligibility import check_eligibility
 from app.scoring.job_scorer import calculate_skill_score
 from app.scoring.role_scorer import calculate_role_score
-from app.scoring.experience_scorer import calculate_experience_score
+from app.scoring.experience_scorer import (
+    calculate_experience_score,
+    classify_experience_risk,
+)
 from app.services.skill_normalizer import normalize_skills
+from app.scoring.role_normalizer import RoleFamily, classify_role
 
 
 # ============================================================
@@ -31,6 +35,9 @@ ROLE_WEIGHT = 0.30
 SKILL_WEIGHT = 0.40
 EXPERIENCE_WEIGHT = 0.20
 LOCATION_WEIGHT = 0.10
+
+# Confidence never penalizes more than that fraction.
+MIN_CONFIDENCE = 0.70
 
 
 # ============================================================
@@ -71,32 +78,63 @@ def calculate_location_score(
 
 
 # ============================================================
-# HELPERS
+# INFORMATION AVAILABILITY
 # ============================================================
 
-def _job_lists_skills(job: Job) -> bool:
-    """
-    Return True when the job contains usable skill information.
-    """
-
+def _skill_information_available(job: Job) -> bool:
+    """Return True if the job has usable skill information."""
     return bool(
-        normalize_skills(
-            getattr(
-                job,
-                "required_skills",
-                [],
-            )
-            or []
-        )
-        or normalize_skills(
-            getattr(
-                job,
-                "preferred_skills",
-                [],
-            )
-            or []
-        )
+        normalize_skills(getattr(job, "required_skills", []) or [])
+        or normalize_skills(getattr(job, "preferred_skills", []) or [])
     )
+
+
+def _role_information_available(job: Job) -> bool:
+    """Return True if the job has a classifiable role family."""
+    job_family = classify_role(getattr(job, "title", ""))
+    return job_family != RoleFamily.UNKNOWN
+
+
+def _experience_information_available(job: Job) -> bool:
+    """Return True if experience information is available.
+
+    Experience is always considered available because the scorer
+    uses explicit numeric, parsed text, or seniority fallback.
+    """
+    return True
+
+
+def _location_information_available(job: Job) -> bool:
+    """Return True if the job has location information."""
+    location = getattr(job, "location", "") or ""
+    remote_type = getattr(job, "remote_type", "") or ""
+    return bool(location.strip() or remote_type.strip())
+
+
+def calculate_confidence(job: Job) -> float:
+    """
+    Calculate confidence in the compatibility calculation.
+
+    Confidence is based on availability of ranking-relevant
+    job information, NOT match quality.
+
+    Returns a value between 0.0 and 1.0.
+    """
+    available_weight = 0.0
+
+    if _skill_information_available(job):
+        available_weight += SKILL_WEIGHT
+
+    if _role_information_available(job):
+        available_weight += ROLE_WEIGHT
+
+    if _experience_information_available(job):
+        available_weight += EXPERIENCE_WEIGHT
+
+    if _location_information_available(job):
+        available_weight += LOCATION_WEIGHT
+
+    return available_weight
 
 
 # ============================================================
@@ -110,12 +148,26 @@ def calculate_final_score(
     location_score: float | None,
 ) -> float:
     """
-    Calculate the final candidate-job compatibility score.
+    Calculate the compatibility score (weighted average of active
+    dimensions).
 
-    When any dimension is None (unconfigured), its weight is
-    redistributed proportionally across the remaining active
-    dimensions.  Unconfigured dimensions never receive a
-    synthetic score of 100.
+    Formula:
+        compatibility = sum(score_i * (weight_i / total_active_weight))
+
+    Where:
+        total_active_weight = sum(weight_i for dimensions where score_i is not None)
+        Weights: skill=0.40, role=0.30, experience=0.20, location=0.10
+
+    Semantic contract for each dimension:
+
+        float (0-100) = actual compatibility score
+            0.0   = known mismatch (hurts the score)
+            50.0  = information unavailable / neutral (contributes 50)
+            100.0 = known match (helps the score)
+
+        None = candidate preference not configured
+            (e.g., no preferred_roles, no preferred_locations)
+            Excluded from scoring, weight redistributed proportionally.
     """
 
     dimensions = {
@@ -153,6 +205,39 @@ def calculate_final_score(
     )
 
 
+def calculate_ranking_score(
+    compatibility: float,
+    confidence: float,
+) -> float:
+    """
+    Calculate the final ranking score from compatibility and confidence.
+
+    Formula:
+        ranking_score = compatibility * confidence_factor
+
+    Where:
+        confidence_factor = MIN_CONFIDENCE + (1 - MIN_CONFIDENCE) * confidence
+
+    This ensures:
+        - Maximum confidence (1.0) → factor = 1.0 (no penalty)
+        - Zero confidence (0.0) → factor = 0.7 (30% penalty max)
+        - Confidence never overwhelms genuine compatibility
+    """
+
+    confidence_factor = MIN_CONFIDENCE + (1.0 - MIN_CONFIDENCE) * confidence
+
+    return round(
+        max(
+            0.0,
+            min(
+                100.0,
+                compatibility * confidence_factor,
+            ),
+        ),
+        2,
+    )
+
+
 # ============================================================
 # SCORE ONE JOB
 # ============================================================
@@ -170,8 +255,6 @@ def score_job(
         job,
     )
 
-    listed_skills = _job_lists_skills(job)
-
     skill_score = calculate_skill_score(
         candidate,
         job,
@@ -187,20 +270,47 @@ def score_job(
         job,
     )
 
+    # Experience risk: explainable warning, NOT a ranking penalty.
+    # Risk does NOT modify compatibility_score or final_score.
+    _req_years = getattr(
+        job, "experience_years_required", None,
+    )
+    try:
+        _req_float = float(_req_years) if _req_years is not None else None
+    except (TypeError, ValueError):
+        _req_float = None
+    _cand_years = getattr(
+        candidate.facts, "experience_years", 0.0,
+    ) or 0.0
+    _strictness = getattr(
+        job, "requirement_strictness", "unknown",
+    ) or "unknown"
+    experience_risk = classify_experience_risk(
+        _cand_years,
+        _req_float,
+        _strictness,
+    )
+
     location_score = calculate_location_score(
         candidate,
         job,
     )
 
-    final_score = calculate_final_score(
-        skill_score=(
-            skill_score
-            if listed_skills
-            else None
-        ),
+    # Compatibility: weighted average of active dimensions.
+    compatibility = calculate_final_score(
+        skill_score=skill_score,
         role_score=role_score,
         experience_score=experience_score,
         location_score=location_score,
+    )
+
+    # Confidence: based on job information availability.
+    confidence = calculate_confidence(job)
+
+    # Final ranking score: compatibility weighted by confidence.
+    final_score = calculate_ranking_score(
+        compatibility,
+        confidence,
     )
 
     return JobMatch(
@@ -218,10 +328,13 @@ def score_job(
             experience_score,
             2,
         ),
+        experience_risk=experience_risk,
         location_score=round(
             location_score,
             2,
         ) if location_score is not None else None,
+        compatibility_score=compatibility,
+        confidence=round(confidence, 2),
         final_score=final_score,
         eligibility_reasons=eligibility.reasons,
     )
@@ -256,10 +369,21 @@ def rank_jobs(
         if match.eligible
     ]
 
+    # Rank eligible matches with deterministic tie-breaking.
+    #
+    # Priority order:
+    #   1. ranking score (descending)
+    #   2. confidence (descending)
+    #   3. compatibility score (descending)
+    #   4. job.id (ascending) — stable canonical identifier
     ranked_matches = sorted(
         eligible_matches,
-        key=lambda match: match.final_score,
-        reverse=True,
+        key=lambda match: (
+            -match.final_score,
+            -match.confidence,
+            -match.compatibility_score,
+            match.job.id,
+        ),
     )
 
     if limit is not None:
