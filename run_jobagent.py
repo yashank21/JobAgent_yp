@@ -420,10 +420,10 @@ def main(
     for match in ranked_jobs:
         print(f"\n{match.job.company} | {match.job.title}")
         print(f"Final Score : {match.final_score:.2f}")
-        print(f"Role        : {match.role_score:.2f}")
+        print(f"Role        : {f'{match.role_score:.2f}' if match.role_score is not None else 'N/A'}")
         print(f"Skills      : {match.skill_score:.2f}")
         print(f"Experience  : {match.experience_score:.2f}")
-        print(f"Location    : {match.location_score:.2f}")
+        print(f"Location    : {f'{match.location_score:.2f}' if match.location_score is not None else 'N/A'}")
         print(f"Eligible    : {match.eligible}")
         print(f"Job location: {match.job.location}")
 

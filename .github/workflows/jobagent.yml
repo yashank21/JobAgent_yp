@@ -1,9 +1,10 @@
 name: JobAgent Daily Digest
 
-# Daily digest at 9:00 AM IST
+# Daily digest at 8:00 AM IST
 on:
   schedule:
-    - cron: "30 3 * * *"
+    - cron: "0 8 * * *"
+      timezone: "Asia/Kolkata"
 
   workflow_dispatch:
     inputs:

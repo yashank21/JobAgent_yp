@@ -65,8 +65,10 @@ class EmailService:
         return html_lib.escape(str(text))
 
     @staticmethod
-    def _score_color(score: float) -> str:
+    def _score_color(score: float | None) -> str:
         """Return a hex color based on score value."""
+        if score is None:
+            return "#6b7280"
         if score >= 80:
             return "#16a34a"
         if score >= 60:
@@ -74,8 +76,10 @@ class EmailService:
         return "#dc2626"
 
     @staticmethod
-    def _score_bg(score: float) -> str:
+    def _score_bg(score: float | None) -> str:
         """Return a light background color for score pills."""
+        if score is None:
+            return "#f3f4f6"
         if score >= 80:
             return "#dcfce7"
         if score >= 60:
@@ -371,10 +375,11 @@ class EmailService:
         </div>
         """
 
-    def _score_pill(self, label: str, score: float) -> str:
+    def _score_pill(self, label: str, score: float | None) -> str:
         """Build a single score pill cell for the detail row."""
         color = self._score_color(score)
         bg = self._score_bg(score)
+        display = f"{score:.1f}" if score is not None else "N/A"
         return f"""
         <td style="padding:4px 6px 4px 0;">
           <span style="
@@ -385,7 +390,7 @@ class EmailService:
             font-weight:600;
             padding:4px 10px;
             border-radius:12px;
-          ">{self._esc(label)} {score:.1f}</span>
+          ">{self._esc(label)} {display}</span>
         </td>
         """
 

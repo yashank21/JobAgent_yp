@@ -268,3 +268,43 @@ class TestNoEligibilityReasons:
         match = _make_match(eligibility_reasons=[])
         html = _build([match])
         assert "No eligibility details" in html
+
+
+class TestNoneScores:
+    """Regression: None scores (unconfigured preferences) must not
+    crash the email renderer."""
+
+    def test_location_score_none_does_not_crash(self):
+        match = _make_match(location_score=None)
+        html = _build([match])
+        assert "Location" in html
+        assert "N/A" in html
+
+    def test_role_score_none_does_not_crash(self):
+        match = _make_match(role_score=None)
+        html = _build([match])
+        assert "Role" in html
+        assert "N/A" in html
+
+    def test_both_none_does_not_crash(self):
+        match = _make_match(role_score=None, location_score=None)
+        html = _build([match])
+        assert "Role" in html
+        assert "Location" in html
+        assert html.count("N/A") >= 2
+
+    def test_numeric_scores_still_render(self):
+        match = _make_match(
+            role_score=90.0,
+            location_score=100.0,
+        )
+        html = _build([match])
+        assert "90.0" in html
+        assert "100.0" in html
+        assert "N/A" not in html
+
+    def test_none_uses_neutral_color(self):
+        match = _make_match(location_score=None)
+        html = _build([match])
+        assert "#6b7280" in html
+        assert "#f3f4f6" in html

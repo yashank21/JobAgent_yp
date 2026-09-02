@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 from app.models.job import Job
@@ -11,10 +13,10 @@ class JobMatch:
     eligible: bool = True
 
     skill_score: float = 0.0
-    role_score: float = 0.0
+    role_score: float | None = 0.0
     experience_score: float = 0.0
     experience_risk: str = "unknown"
-    location_score: float = 0.0
+    location_score: float | None = 0.0
     salary_score: float = 0.0
 
     # Weighted average of active dimensions (Step 3 formula).

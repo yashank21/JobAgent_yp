@@ -651,3 +651,77 @@ def test_non_interactive_does_not_invent_preferences():
 
     assert profile.facts.resume_roles == ["Backend Engineer"]
     assert profile.facts.skills == ["Go", "PostgreSQL"]
+
+
+# ---------------------------------------------------------
+# Regression: None score output formatting
+# ---------------------------------------------------------
+
+
+def test_ranked_jobs_with_none_scores_do_not_crash(capsys):
+    """
+    Regression: role_score=None and location_score=None must not
+    crash the console output formatting in main().
+    """
+    from app.models.job import Job
+    from app.models.match import JobMatch
+
+    match = JobMatch(
+        job=Job(
+            id="1",
+            title="AI Engineer",
+            company="OpenAI",
+            location="San Francisco, CA",
+        ),
+        eligible=True,
+        skill_score=70.0,
+        role_score=None,
+        experience_score=100.0,
+        location_score=None,
+        final_score=57.22,
+    )
+
+    mock_cache = MagicMock()
+    mock_cache.get_stats.return_value = {
+        "active": 1,
+        "total": 1,
+        "stale": 0,
+        "by_source": {"greenhouse": 1},
+    }
+    mock_cache.query_active.return_value = [match.job]
+
+    with patch("run_jobagent.JobCache", return_value=mock_cache), \
+         patch("run_jobagent.UniversalATSRacer") as mock_racer, \
+         patch("run_jobagent.WellfoundCollector") as mock_wf, \
+         patch("run_jobagent.load_companies_from_file", return_value=[]), \
+         patch("run_jobagent.filter_recent_jobs", return_value=[match.job]), \
+         patch("run_jobagent.enrich_recent_jobs_with_groq", return_value=[match.job]), \
+         patch("run_jobagent.rank_jobs", return_value=[match]), \
+         patch("run_jobagent.EmailService") as mock_email, \
+         patch("run_jobagent.extract_resume_text", return_value="resume text"), \
+         patch("run_jobagent.build_candidate_profile") as mock_build:
+
+        mock_build.return_value = CandidateProfile(
+            resume_roles=["AI Engineer"],
+        )
+
+        mock_racer_instance = MagicMock()
+        mock_racer_instance.collect_all.return_value = []
+        mock_racer.return_value = mock_racer_instance
+
+        mock_wf_instance = MagicMock()
+        mock_wf_instance.collect.return_value = []
+        mock_wf.return_value = mock_wf_instance
+
+        with patch.object(sys, "argv", [
+            "run_jobagent.py",
+            "--resume", "r.pdf",
+            "--non-interactive",
+            "--mode", "cache_only",
+        ]):
+            main("r.pdf", non_interactive=True, mode="cache_only")
+
+    captured = capsys.readouterr()
+    assert "N/A" in captured.out
+    assert "OpenAI" in captured.out
+    assert "TypeError" not in captured.err
